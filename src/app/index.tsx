@@ -1,5 +1,5 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance & Christmas Raffle System
+// Work Christmas Party – Smart QR Check-In Scanner
 // Screen: Welcome Screen (index.tsx) — No Login Required
 // Design: Festive Pine Green, Crimson Red, Gold & Warm Beige
 // ============================================================
@@ -22,7 +22,6 @@ import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 
 SplashScreen.hideAsync();
 
-// ── Festive sparkle / leaf decoration component ─────────────
 function FestiveDecor({
   icon,
   color,
@@ -39,7 +38,6 @@ function FestiveDecor({
   );
 }
 
-// ── QR Icon with animated scan line ───────────────────────
 function AnimatedQRIcon() {
   const [scanAnim] = useState(() => new Animated.Value(0));
 
@@ -69,13 +67,11 @@ function AnimatedQRIcon() {
 
   return (
     <View style={styles.qrWrapper}>
-      {/* Corner brackets */}
       <View style={[styles.corner, styles.cornerTL]} />
       <View style={[styles.corner, styles.cornerTR]} />
       <View style={[styles.corner, styles.cornerBL]} />
       <View style={[styles.corner, styles.cornerBR]} />
 
-      {/* QR grid dots */}
       <View style={styles.qrGrid}>
         <View style={styles.qrRow}>
           <View style={[styles.qrBlock, styles.qrBlockLg]} />
@@ -85,7 +81,7 @@ function AnimatedQRIcon() {
         <View style={styles.qrRow}>
           <View style={styles.qrBlockSm} />
           <View style={styles.qrGiftBadge}>
-            <Ionicons name="gift" size={18} color={Colors.crimson} />
+            <Ionicons name="qr-code" size={18} color={Colors.darkGreen} />
           </View>
           <View style={styles.qrBlockSm} />
         </View>
@@ -96,7 +92,6 @@ function AnimatedQRIcon() {
         </View>
       </View>
 
-      {/* Animated scan line */}
       <Animated.View
         style={[
           styles.scanLine,
@@ -107,7 +102,6 @@ function AnimatedQRIcon() {
   );
 }
 
-// ── Main Welcome Screen ─────────────────────────────────────
 export default function WelcomeScreen() {
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [slideAnim] = useState(() => new Animated.Value(40));
@@ -131,7 +125,7 @@ export default function WelcomeScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.darkGreen} />
 
-      {/* ── Hero Card (Festive Green Top Section) ── */}
+      {/* ── Hero Card ── */}
       <View style={styles.heroCard}>
         <FestiveDecor
           icon="sparkles"
@@ -139,14 +133,14 @@ export default function WelcomeScreen() {
           style={styles.leafTopLeft}
         />
         <FestiveDecor
-          icon="gift-outline"
+          icon="star"
           color={Colors.white}
           style={[styles.leafTopLeft, styles.leafTopRight]}
         />
 
         <View style={styles.seasonPill}>
           <Ionicons name="sparkles" size={14} color={Colors.goldBright} />
-          <Text style={styles.seasonPillText}>CHRISTMAS PARTY EDITION</Text>
+          <Text style={styles.seasonPillText}>COMPANY CHRISTMAS PARTY</Text>
         </View>
 
         <AnimatedQRIcon />
@@ -157,7 +151,7 @@ export default function WelcomeScreen() {
           style={[styles.leafTopLeft, styles.leafBottomLeft]}
         />
         <FestiveDecor
-          icon="star"
+          icon="sparkles"
           color={Colors.goldBright}
           style={[styles.leafTopLeft, styles.leafBottomRight]}
         />
@@ -170,11 +164,10 @@ export default function WelcomeScreen() {
           { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
         ]}
       >
-        {/* Title */}
         <View style={styles.titleSection}>
-          <Text style={styles.title}>Smart QR Check-In{'\n'}& Raffle System</Text>
+          <Text style={styles.title}>Christmas Party{'\n'}QR Check-In</Text>
           <Text style={styles.tagline}>
-            Scan Guest QR  ·  Sync Google Sheets  ·  Spin the Wheel
+            Scan Bulk QR Passes  ·  Auto-Save Name & Department to Google Sheets
           </Text>
         </View>
 
@@ -182,34 +175,36 @@ export default function WelcomeScreen() {
         <View style={styles.badgeRow}>
           <View style={styles.badge}>
             <Ionicons name="logo-google" size={14} color={Colors.leafGreen} />
-            <Text style={styles.badgeText}>Google Sheets Sync</Text>
+            <Text style={styles.badgeText}>Google Sheets Live Sync</Text>
           </View>
-          <View style={[styles.badge, { borderColor: Colors.crimson }]}>
-            <Ionicons name="gift" size={14} color={Colors.crimson} />
-            <Text style={[styles.badgeText, { color: Colors.crimson }]}>
-              Live Raffle Roulette
-            </Text>
+          <View style={styles.badge}>
+            <Ionicons
+              name="briefcase-outline"
+              size={14}
+              color={Colors.darkGreen}
+            />
+            <Text style={styles.badgeText}>Name & Department</Text>
           </View>
         </View>
 
-        {/* Buttons (No Login Required!) */}
+        {/* Buttons */}
         <View style={styles.buttonGroup}>
           <TouchableOpacity
             style={styles.btnPrimary}
-            onPress={() => router.push('/dashboard')}
+            onPress={() => router.push('/scanner')}
             activeOpacity={0.85}
           >
             <Ionicons name="scan-outline" size={20} color={Colors.white} />
-            <Text style={styles.btnPrimaryText}>Enter Event Dashboard</Text>
+            <Text style={styles.btnPrimaryText}>Start Scanning QR Codes</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.btnSecondary}
-            onPress={() => router.push('/roulette')}
+            onPress={() => router.push('/dashboard')}
             activeOpacity={0.85}
           >
-            <Ionicons name="gift-outline" size={20} color={Colors.crimson} />
-            <Text style={styles.btnSecondaryText}>Open Christmas Raffle Wheel</Text>
+            <Ionicons name="grid-outline" size={18} color={Colors.darkGreen} />
+            <Text style={styles.btnSecondaryText}>Open Event Dashboard</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -217,14 +212,11 @@ export default function WelcomeScreen() {
   );
 }
 
-// ── Styles ──────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.beige,
   },
-
-  // Hero Card
   heroCard: {
     backgroundColor: Colors.darkGreen,
     borderBottomLeftRadius: Radius.xl,
@@ -266,8 +258,6 @@ const styles = StyleSheet.create({
     bottom: Spacing.md,
     right: Spacing.lg,
   },
-
-  // QR Icon
   qrWrapper: {
     width: 156,
     height: 156,
@@ -329,8 +319,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-
-  // Content
   content: {
     flex: 0.54,
     paddingHorizontal: Spacing.xl,
@@ -358,8 +346,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     fontWeight: '500',
   },
-
-  // Badges
   badgeRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -384,8 +370,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     letterSpacing: 0.2,
   },
-
-  // Buttons
   buttonGroup: {
     width: '100%',
     gap: Spacing.md,
@@ -414,11 +398,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.sm,
     borderWidth: 1.5,
-    borderColor: Colors.crimson,
-    backgroundColor: Colors.crimsonLight,
+    borderColor: Colors.darkGreen,
+    backgroundColor: Colors.white,
   },
   btnSecondaryText: {
-    color: Colors.crimson,
+    color: Colors.darkGreen,
     fontSize: FontSize.md,
     fontWeight: '700',
     letterSpacing: 0.2,

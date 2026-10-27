@@ -1,8 +1,7 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
-// Component: StudentCard.tsx
-// Props: studentName, studentId, course, section, onEdit
-// Design: Leaf Green (#4A7C59) + Warm Beige (#F5F0E8)
+// Work Christmas Party – Smart QR Check-In Scanner
+// Component: StudentCard.tsx (Participant / Scanner Operator Card)
+// Shows: Name & Department only
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -12,22 +11,17 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 
 export interface StudentCardProps {
-  studentName?: string;
-  studentId?: string;
-  course?: string;
-  section?: string;
+  participantName?: string;
+  department?: string;
   onEdit?: () => void;
 }
 
 export function StudentCard({
-  studentName = 'Juan Dela Cruz',
-  studentId = '2024-00123',
-  course = 'BS Information Technology',
-  section = 'IT-3A',
+  participantName = 'Joebelle Dumapias',
+  department = 'IT & Operations',
   onEdit,
 }: StudentCardProps) {
-  // Extract initials for the avatar
-  const initials = (studentName || 'ST')
+  const initials = (participantName || 'EMP')
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
@@ -36,16 +30,15 @@ export function StudentCard({
 
   return (
     <View style={styles.card}>
-      {/* Top section: Avatar + Name + Status / Edit */}
       <View style={styles.headerRow}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials || 'ST'}</Text>
+          <Text style={styles.avatarText}>{initials || 'EMP'}</Text>
         </View>
 
         <View style={styles.nameContainer}>
           <View style={styles.nameRow}>
-            <Text style={styles.studentName} numberOfLines={1}>
-              {studentName}
+            <Text style={styles.participantName} numberOfLines={1}>
+              {participantName}
             </Text>
             {onEdit && (
               <TouchableOpacity
@@ -58,33 +51,15 @@ export function StudentCard({
               </TouchableOpacity>
             )}
           </View>
-          <View style={styles.idRow}>
-            <Ionicons name="id-card-outline" size={14} color={Colors.olive} />
-            <Text style={styles.studentId}>{studentId}</Text>
+          <View style={styles.deptRow}>
+            <Ionicons name="briefcase-outline" size={14} color={Colors.olive} />
+            <Text style={styles.departmentText}>{department}</Text>
           </View>
         </View>
 
         <View style={styles.statusBadge}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusText}>Active</Text>
-        </View>
-      </View>
-
-      {/* Divider */}
-      <View style={styles.divider} />
-
-      {/* Bottom details: Course & Section */}
-      <View style={styles.detailsRow}>
-        <View style={styles.detailItem}>
-          <Text style={styles.detailLabel}>COURSE</Text>
-          <Text style={styles.detailValue} numberOfLines={1}>
-            {course}
-          </Text>
-        </View>
-
-        <View style={styles.sectionBadge}>
-          <Text style={styles.sectionLabel}>SEC</Text>
-          <Text style={styles.sectionValue}>{section}</Text>
+          <Text style={styles.statusText}>Scanner Ready</Text>
         </View>
       </View>
     </View>
@@ -121,14 +96,14 @@ const styles = StyleSheet.create({
   },
   nameContainer: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  studentName: {
+  participantName: {
     fontSize: FontSize.lg,
     fontWeight: '700',
     color: Colors.textPrimary,
@@ -142,15 +117,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  idRow: {
+  deptRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
   },
-  studentId: {
+  departmentText: {
     fontSize: FontSize.sm,
     color: Colors.olive,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   statusBadge: {
     flexDirection: 'row',
@@ -171,51 +146,5 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '600',
     color: Colors.present,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.creamWhite,
-    marginVertical: Spacing.md,
-  },
-  detailsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-  },
-  detailItem: {
-    flex: 1,
-    gap: 2,
-  },
-  detailLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.textMuted,
-    letterSpacing: 0.8,
-  },
-  detailValue: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  sectionBadge: {
-    backgroundColor: Colors.creamWhite,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radius.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  sectionLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: Colors.textMuted,
-    letterSpacing: 0.5,
-  },
-  sectionValue: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.leafGreen,
   },
 });

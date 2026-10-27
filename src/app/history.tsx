@@ -1,16 +1,21 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance & Christmas Raffle System
-// Screen: Attendance History & CSV Export (history.tsx)
-// Features: List records, Filter by status, CSV Export for Google Sheets
+// Work Christmas Party – Smart QR Check-In Scanner
+// Screen: Checked-In Participants & Export (history.tsx)
+// Features:
+//   - Lists all checked-in participants (Name & Department)
+//   - Copy Names for wheelofnames.com or Export CSV for Google Sheets
+//   - Push any unsynced records to Google Sheets
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Linking,
   Modal,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -21,43 +26,51 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AttendanceCard } from '@/components/AttendanceCard';
-import { StatusMessage } from '@/components/StatusMessage';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAttendance } from '@/context/attendance-context';
-import { formatRecordsAsCSV } from '@/services/google-sheets';
-import { AttendanceRecord, AttendanceStatus } from '@/types/attendance';
-
-type FilterType = 'all' | AttendanceStatus;
+import {
+  formatForWheelOfNames,
+  formatRecordsAsCSV,
+} from '@/services/google-sheets';
+import { AttendanceRecord } from '@/types/attendance';
 
 export default function HistoryScreen() {
-  const { records, winners, stats, clearRecords, addRecord } = useAttendance();
-  const { studentName, studentId } = useLocalSearchParams<{
-    studentName?: string;
-    studentId?: string;
-  }>();
+  const { records, stats, clearRecords, addRecord } = useAttendance();
 
-  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
-  const [showCsvModal, setShowCsvModal] = useState(false);
+  const [selectedDept, setSelectedDept] = useState<string>('All');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportMode, setExportMode] = useState<'wheel' | 'csv'>('wheel');
+
+  // Unique departments for filter chips
+  const departmentFilters = useMemo(() => {
+    const depts = Array.from(
+      new Set(records.map((r) => r.department.trim()).filter(Boolean))
+    );
+    return ['All', ...depts];
+  }, [records]);
 
   const filteredRecords = useMemo(() => {
-    if (activeFilter === 'all') return records;
-    return records.filter((item) => item.status === activeFilter);
-  }, [records, activeFilter]);
+    if (selectedDept === 'All') return records;
+    return records.filter(
+      (item) => item.department.toLowerCase() === selectedDept.toLowerCase()
+    );
+  }, [records, selectedDept]);
 
-  const csvContent = useMemo(
-    () => formatRecordsAsCSV(records, winners),
-    [records, winners]
-  );
+  const exportText = useMemo(() => {
+    return exportMode === 'wheel'
+      ? formatForWheelOfNames(records)
+      : formatRecordsAsCSV(records);
+  }, [records, exportMode]);
 
   function handleClearAll() {
     if (records.length === 0) {
-      Alert.alert('Empty History', 'There are no attendance records to clear.');
+      Alert.alert('Empty List', 'There are no check-in records to clear.');
       return;
     }
 
     Alert.alert(
-      'Clear History',
-      'Are you sure you want to delete all attendance records? This action cannot be undone.',
+      'Clear Check-In List',
+      'Are you sure you want to delete all local check-in records? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -75,37 +88,28 @@ export default function HistoryScreen() {
     );
   }
 
-  function handleAddTestRecord() {
-    const sampleStatuses: AttendanceStatus[] = [
-      'present',
-      'present',
-      'late',
-      'present',
+  function handleAddSampleEmployee() {
+    const samples = [
+      { name: 'Clarisse Villanueva', dept: 'HR & Admin' },
+      { name: 'Gabriel Tan', dept: 'Engineering' },
+      { name: 'Patricia Lim', dept: 'Finance & Accounting' },
+      { name: 'Joshua Bautista', dept: 'IT & Operations' },
     ];
-    const randomStatus =
-      sampleStatuses[Math.floor(Math.random() * sampleStatuses.length)];
-
+    const picked = samples[Math.floor(Math.random() * samples.length)];
     addRecord({
-      studentName: studentName || 'Joebelle Dumapias',
-      studentId: studentId || '2024305392',
-      course: 'BS Information Technology',
-      section: 'IT-3A',
-      subject: 'Christmas Party 2026',
-      status: randomStatus,
+      participantName: picked.name,
+      department: picked.dept,
     });
   }
 
   const renderItem = ({ item }: { item: AttendanceRecord }) => {
     return (
       <AttendanceCard
-        studentName={item.studentName}
-        studentId={item.studentId}
-        course={item.course}
-        section={item.section}
-        subject={item.subject || 'Christmas Party 2026'}
-        status={item.status}
+        participantName={item.participantName}
+        department={item.department}
         timestamp={item.time}
         date={item.date}
+        syncedToSheet={item.syncedToSheet}
       />
     );
   };
@@ -125,20 +129,21 @@ export default function HistoryScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerTitleBox}>
-          <Text style={styles.headerTitle}>Check-In Logs</Text>
+          <Text style={styles.headerTitle}>Checked-In List</Text>
           <Text style={styles.headerSubtitle}>
-            {records.length} {records.length === 1 ? 'Participant' : 'Participants'} Checked In
+            {records.length}{' '}
+            {records.length === 1 ? 'Participant' : 'Participants'} Logged
           </Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <TouchableOpacity
             style={styles.circleBtn}
-            onPress={() => setShowCsvModal(true)}
+            onPress={() => setShowExportModal(true)}
             activeOpacity={0.7}
           >
             <Ionicons
-              name="document-text-outline"
+              name="share-outline"
               size={20}
               color={Colors.leafGreen}
             />
@@ -154,86 +159,84 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      {/* ── Overview Summary Row ── */}
+      {/* ── Overview Summary Row (No Late Stat) ── */}
       <View style={styles.overviewCard}>
         <View style={styles.statCol}>
           <Text style={[styles.statNum, { color: Colors.present }]}>
-            {stats.present}
+            {stats.checkedIn}
           </Text>
-          <Text style={styles.statLbl}>Present</Text>
-        </View>
-        <View style={styles.vertDivider} />
-        <View style={styles.statCol}>
-          <Text style={[styles.statNum, { color: Colors.late }]}>
-            {stats.late}
-          </Text>
-          <Text style={styles.statLbl}>Late</Text>
+          <Text style={styles.statLbl}>Checked In</Text>
         </View>
         <View style={styles.vertDivider} />
         <View style={styles.statCol}>
           <Text style={[styles.statNum, { color: Colors.leafGreen }]}>
-            {stats.rate}
+            {stats.synced}
           </Text>
-          <Text style={styles.statLbl}>Attended</Text>
+          <Text style={styles.statLbl}>In Google Sheet</Text>
+        </View>
+        <View style={styles.vertDivider} />
+        <View style={styles.statCol}>
+          <Text style={[styles.statNum, { color: Colors.gold }]}>
+            {stats.departments}
+          </Text>
+          <Text style={styles.statLbl}>Departments</Text>
         </View>
       </View>
 
-      {/* ── Filter Chips ── */}
-      <View style={styles.filterBar}>
-        {(['all', 'present', 'late', 'absent'] as FilterType[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.chip, activeFilter === f && styles.chipActive]}
-            onPress={() => setActiveFilter(f)}
-            activeOpacity={0.7}
-          >
-            <Text
+      {/* ── Department Filter Chips ── */}
+      <View style={styles.filterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterBar}
+        >
+          {departmentFilters.map((dept) => (
+            <TouchableOpacity
+              key={dept}
               style={[
-                styles.chipText,
-                activeFilter === f && styles.chipTextActive,
+                styles.chip,
+                selectedDept === dept && styles.chipActive,
               ]}
+              onPress={() => setSelectedDept(dept)}
+              activeOpacity={0.7}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.chipText,
+                  selectedDept === dept && styles.chipTextActive,
+                ]}
+              >
+                {dept}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* ── Records List or Empty State ── */}
       {filteredRecords.length === 0 ? (
         <View style={styles.emptyContainer}>
-          {activeFilter !== 'all' ? (
-            <StatusMessage status={activeFilter} />
-          ) : (
-            <View style={styles.emptyIconCircle}>
-              <Ionicons
-                name="calendar-outline"
-                size={48}
-                color={Colors.olive}
-              />
-            </View>
-          )}
-          <Text style={styles.emptyTitle}>No Records Found</Text>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="people-outline" size={48} color={Colors.olive} />
+          </View>
+          <Text style={styles.emptyTitle}>No Participants Checked In Yet</Text>
           <Text style={styles.emptySubtitle}>
-            {activeFilter === 'all'
-              ? 'No guests checked in yet. Scan a participant QR code to log check-in and enter them into the Raffle Wheel.'
-              : `No attendance entries found with status "${activeFilter}".`}
+            Scan employee QR codes to record their Name and Department and send
+            them to Google Sheets.
           </Text>
 
-          {activeFilter === 'all' && (
-            <TouchableOpacity
-              style={styles.testBtn}
-              onPress={handleAddTestRecord}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name="add-circle-outline"
-                size={18}
-                color={Colors.white}
-              />
-              <Text style={styles.testBtnText}>Simulate Check-In Log</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.testBtn}
+            onPress={handleAddSampleEmployee}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="add-circle-outline"
+              size={18}
+              color={Colors.white}
+            />
+            <Text style={styles.testBtnText}>Simulate Employee Check-In</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -245,38 +248,95 @@ export default function HistoryScreen() {
         />
       )}
 
-      {/* ── CSV Export Modal for Google Sheets ── */}
+      {/* ── Wheel of Names / CSV Export Modal ── */}
       <Modal
-        visible={showCsvModal}
+        visible={showExportModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowCsvModal(false)}
+        onRequestClose={() => setShowExportModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Google Sheets CSV Export</Text>
-              <TouchableOpacity onPress={() => setShowCsvModal(false)}>
+              <Text style={styles.modalTitle}>
+                Export for Wheel of Names / Sheets
+              </Text>
+              <TouchableOpacity onPress={() => setShowExportModal(false)}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
+
+            <View style={styles.modeSwitchRow}>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  exportMode === 'wheel' && styles.modeBtnActive,
+                ]}
+                onPress={() => setExportMode('wheel')}
+              >
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    exportMode === 'wheel' && styles.modeBtnTextActive,
+                  ]}
+                >
+                  Wheel of Names List
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modeBtn,
+                  exportMode === 'csv' && styles.modeBtnActive,
+                ]}
+                onPress={() => setExportMode('csv')}
+              >
+                <Text
+                  style={[
+                    styles.modeBtnText,
+                    exportMode === 'csv' && styles.modeBtnTextActive,
+                  ]}
+                >
+                  Google Sheets CSV
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.modalHint}>
-              Select and copy the CSV below to paste directly into Google Sheets
-              or Excel:
+              {exportMode === 'wheel'
+                ? 'Select & copy these names to paste directly into https://wheelofnames.com/ (or import directly from your synced Google Sheet):'
+                : 'Select & copy this CSV to paste into Google Sheets or Excel:'}
             </Text>
+
             <TextInput
               style={styles.csvBox}
-              value={csvContent}
+              value={exportText || 'No participants checked in yet.'}
               multiline
               editable={false}
               selectTextOnFocus
             />
-            <TouchableOpacity
-              style={styles.closeModalBtn}
-              onPress={() => setShowCsvModal(false)}
-            >
-              <Text style={styles.closeModalBtnText}>Done</Text>
-            </TouchableOpacity>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                style={styles.openWheelBtn}
+                onPress={() => Linking.openURL('https://wheelofnames.com/')}
+              >
+                <Ionicons
+                  name="open-outline"
+                  size={16}
+                  color={Colors.crimson}
+                />
+                <Text style={styles.openWheelBtnText}>
+                  Open wheelofnames.com
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.closeModalBtn}
+                onPress={() => setShowExportModal(false)}
+              >
+                <Text style={styles.closeModalBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -350,16 +410,17 @@ const styles = StyleSheet.create({
     height: '60%',
     backgroundColor: Colors.creamWhite,
   },
-  filterBar: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.xl,
+  filterWrapper: {
     paddingVertical: Spacing.md,
+  },
+  filterBar: {
+    paddingHorizontal: Spacing.xl,
     gap: Spacing.sm,
   },
   chip: {
-    flex: 1,
     backgroundColor: Colors.creamWhite,
-    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs + 3,
     borderRadius: Radius.pill,
     alignItems: 'center',
     borderWidth: 1,
@@ -447,13 +508,37 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   modalTitle: {
-    fontSize: FontSize.lg,
+    fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  modeSwitchRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.beige,
+    borderRadius: Radius.pill,
+    padding: 4,
+  },
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
+    alignItems: 'center',
+  },
+  modeBtnActive: {
+    backgroundColor: Colors.leafGreen,
+  },
+  modeBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.olive,
+  },
+  modeBtnTextActive: {
+    color: Colors.white,
   },
   modalHint: {
     fontSize: FontSize.xs,
     color: Colors.olive,
+    lineHeight: 17,
   },
   csvBox: {
     backgroundColor: Colors.beige,
@@ -462,9 +547,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'monospace',
     color: Colors.textPrimary,
-    maxHeight: 220,
+    maxHeight: 200,
+  },
+  openWheelBtn: {
+    flex: 1.3,
+    height: 46,
+    borderRadius: Radius.pill,
+    borderWidth: 1.5,
+    borderColor: Colors.crimson,
+    backgroundColor: Colors.crimsonLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  openWheelBtnText: {
+    color: Colors.crimson,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
   },
   closeModalBtn: {
+    flex: 1,
     height: 46,
     borderRadius: Radius.pill,
     backgroundColor: Colors.leafGreen,

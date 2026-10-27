@@ -1,57 +1,44 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance & Christmas Raffle System
-// Service: Local Student / Organizer Profile Storage (Passwordless)
+// Work Christmas Party – Smart QR Check-In Scanner
+// Service: Local Organizer / Default Staff Profile Storage
+// (Name & Department only — no login, no school fields)
 // ============================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const PROFILE_KEY = '@active_student_profile';
+const PROFILE_KEY = '@work_staff_profile';
 
-/** Public-facing participant / organizer profile */
-export interface StudentProfile {
-  studentId: string;
-  studentName: string;
-  course: string;
-  section: string;
-  createdAt: string;
+export interface StaffProfile {
+  participantName: string;
+  department: string;
   updatedAt: string;
 }
 
-export const DEFAULT_STUDENT_PROFILE: StudentProfile = {
-  studentId: '2024305392',
-  studentName: 'Joebelle Dumapias',
-  course: 'BS Information Technology',
-  section: 'IT-3A',
-  createdAt: '2026-10-27T00:00:00.000Z',
+export const DEFAULT_STAFF_PROFILE: StaffProfile = {
+  participantName: 'Joebelle Dumapias',
+  department: 'IT & Operations',
   updatedAt: '2026-10-27T00:00:00.000Z',
 };
 
-/**
- * Load the saved Student / Participant profile from AsyncStorage.
- * Returns DEFAULT_STUDENT_PROFILE if none is stored yet.
- */
-export async function getStudentProfile(): Promise<StudentProfile> {
+export async function getStaffProfile(): Promise<StaffProfile> {
   try {
     const raw = await AsyncStorage.getItem(PROFILE_KEY);
-    if (!raw) return DEFAULT_STUDENT_PROFILE;
+    if (!raw) return DEFAULT_STAFF_PROFILE;
     return {
-      ...DEFAULT_STUDENT_PROFILE,
-      ...(JSON.parse(raw) as Partial<StudentProfile>),
+      ...DEFAULT_STAFF_PROFILE,
+      ...(JSON.parse(raw) as Partial<StaffProfile>),
     };
   } catch (error) {
     console.error('[ProfileStorage] Failed to load profile:', error);
-    return DEFAULT_STUDENT_PROFILE;
+    return DEFAULT_STAFF_PROFILE;
   }
 }
 
-/**
- * Persist updates to the Student / Participant profile in AsyncStorage.
- */
-export async function saveStudentProfile(
-  updates: Partial<Pick<StudentProfile, 'studentId' | 'studentName' | 'course' | 'section'>>
-): Promise<StudentProfile> {
-  const current = await getStudentProfile();
-  const updated: StudentProfile = {
+export async function saveStaffProfile(
+  updates: Partial<Pick<StaffProfile, 'participantName' | 'department'>>
+): Promise<StaffProfile> {
+  const current = await getStaffProfile();
+  const updated: StaffProfile = {
     ...current,
     ...updates,
     updatedAt: new Date().toISOString(),

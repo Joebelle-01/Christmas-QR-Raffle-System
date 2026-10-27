@@ -1,19 +1,20 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance & Christmas Raffle System
-// Screen: DashboardScreen (dashboard.tsx) — Event Control Hub
+// Work Christmas Party – Smart QR Check-In Scanner
+// Screen: DashboardScreen (dashboard.tsx)
 // Features:
-//   - Live Clock & Persistent Organizer/Participant Profile
-//   - Christmas Raffle Roulette Card (live pool & winners count)
-//   - Google Sheets Hybrid Connection Card & Setup Modal
-//   - Built-in Participant QR Pass Generator (react-native-qrcode-svg)
+//   - QR Scanner Launcher (for 200+ bulk third-party QR passes)
+//   - Google Sheets Auto-Sync Setup (sends Name & Department on scan)
+//   - External Link to https://wheelofnames.com/ for fair raffle draw
+//   - Live Check-In Overview (Checked In, Synced, Departments — No Late)
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   ScrollView,
   StatusBar,
@@ -23,58 +24,35 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ScanButton } from '@/components/ScanButton';
 import { StudentCard } from '@/components/StudentCard';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAttendance } from '@/context/attendance-context';
-import { getStudentProfile, saveStudentProfile } from '@/services/auth-storage';
+import { getStaffProfile, saveStaffProfile } from '@/services/auth-storage';
 import { GOOGLE_APPS_SCRIPT_TEMPLATE } from '@/services/google-sheets';
 
-const COURSES = [
-  'BS Information Technology',
-  'BS Computer Science',
-  'BS Information Systems',
-  'BS Computer Engineering',
+const WORK_DEPARTMENTS = [
+  'IT & Operations',
+  'HR & Admin',
+  'Finance & Accounting',
+  'Sales & Marketing',
+  'Engineering',
+  'Customer Support',
+  'Management',
 ];
 
-const SECTIONS = ['IT-3A', 'IT-3B', 'CS-3A', 'CS-3B'];
-
 export default function DashboardScreen() {
-  const params = useLocalSearchParams<{
-    studentName?: string;
-    studentId?: string;
-    course?: string;
-    section?: string;
-  }>();
+  // ── Staff / Default Department State ────────────────────
+  const [staffName, setStaffName] = useState('Joebelle Dumapias');
+  const [defaultDepartment, setDefaultDepartment] =
+    useState('IT & Operations');
 
-  // ── Profile State (Persisted in AsyncStorage) ───────────
-  const [currentId, setCurrentId] = useState(params.studentId || '2024305392');
-  const [currentName, setCurrentName] = useState(
-    params.studentName || 'Joebelle Dumapias'
-  );
-  const [currentCourse, setCurrentCourse] = useState(
-    params.course || COURSES[0]
-  );
-  const [currentSection, setCurrentSection] = useState(
-    params.section || SECTIONS[0]
-  );
-
-  // ── Edit Profile Modal State ────────────────────────────
+  // ── Edit Staff / Default Department Modal ───────────────
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editId, setEditId] = useState(currentId);
-  const [editName, setEditName] = useState(currentName);
-  const [editCourse, setEditCourse] = useState(currentCourse);
-  const [editSection, setEditSection] = useState(currentSection);
-
-  // ── QR Pass Generator Modal State ───────────────────────
-  const [showQRPassModal, setShowQRPassModal] = useState(false);
-  const [passName, setPassName] = useState(currentName);
-  const [passId, setPassId] = useState(currentId);
-  const [passCourse, setPassCourse] = useState(currentCourse);
-  const [passSection, setPassSection] = useState(currentSection);
+  const [editName, setEditName] = useState(staffName);
+  const [editDept, setEditDept] = useState(defaultDepartment);
 
   // ── Google Sheets Setup Modal State ─────────────────────
   const [showSheetsModal, setShowSheetsModal] = useState(false);
@@ -83,28 +61,23 @@ export default function DashboardScreen() {
   const [showScriptCode, setShowScriptCode] = useState(false);
   const [syncNotice, setSyncNotice] = useState('');
 
-  // ── Attendance & Raffle Context ─────────────────────────
+  // ── Attendance Context ──────────────────────────────────
   const {
     stats,
-    rafflePool,
-    winners,
     sheetsConfig,
     isSyncing,
     updateSheetsConfig,
-    syncWithGoogleSheets,
+    syncPendingToGoogleSheets,
   } = useAttendance();
 
-  // Load saved profile on mount
   useEffect(() => {
-    getStudentProfile().then((saved) => {
-      setCurrentId(params.studentId || saved.studentId);
-      setCurrentName(params.studentName || saved.studentName);
-      setCurrentCourse(params.course || saved.course);
-      setCurrentSection(params.section || saved.section);
+    getStaffProfile().then((saved) => {
+      setStaffName(saved.participantName);
+      setDefaultDepartment(saved.department);
     });
-  }, [params.studentId, params.studentName, params.course, params.section]);
+  }, []);
 
-  // ── Live Date & Time State ──────────────────────────────
+  // ── Live Clock ──────────────────────────────────────────
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -130,37 +103,23 @@ export default function DashboardScreen() {
 
   // ── Handlers ─────────────────────────────────────────────
   function handleOpenEditProfile() {
-    setEditId(currentId);
-    setEditName(currentName);
-    setEditCourse(currentCourse);
-    setEditSection(currentSection);
+    setEditName(staffName);
+    setEditDept(defaultDepartment);
     setShowEditModal(true);
   }
 
   async function handleSaveProfile() {
-    if (!editName.trim() || !editId.trim()) {
-      Alert.alert('Validation', 'Please enter both Name and ID.');
+    if (!editName.trim()) {
+      Alert.alert('Validation', 'Please enter a valid name.');
       return;
     }
-    const updated = await saveStudentProfile({
-      studentId: editId.trim(),
-      studentName: editName.trim(),
-      course: editCourse,
-      section: editSection,
+    const updated = await saveStaffProfile({
+      participantName: editName.trim(),
+      department: editDept.trim() || 'General',
     });
-    setCurrentId(updated.studentId);
-    setCurrentName(updated.studentName);
-    setCurrentCourse(updated.course);
-    setCurrentSection(updated.section);
+    setStaffName(updated.participantName);
+    setDefaultDepartment(updated.department);
     setShowEditModal(false);
-  }
-
-  function handleOpenQRPass() {
-    setPassName(currentName);
-    setPassId(currentId);
-    setPassCourse(currentCourse);
-    setPassSection(currentSection);
-    setShowQRPassModal(true);
   }
 
   function handleOpenSheetsModal() {
@@ -176,7 +135,7 @@ export default function DashboardScreen() {
       webhookUrl: webhookUrlInput.trim(),
       autoSync: true,
     });
-    const result = await syncWithGoogleSheets(updated);
+    const result = await syncPendingToGoogleSheets(updated);
     setSyncNotice(result.message);
   }
 
@@ -184,27 +143,18 @@ export default function DashboardScreen() {
     router.push({
       pathname: '/scanner',
       params: {
-        studentName: currentName,
-        studentId: currentId,
-        course: currentCourse,
-        section: currentSection,
+        defaultDepartment,
       },
     });
   }
 
-  // Encoded QR payload for the built-in QR Pass Generator
-  const generatedQRValue = JSON.stringify({
-    subject: 'Christmas Party 2026',
-    studentId: passId.trim() || '2024305392',
-    studentName: passName.trim() || 'Party Guest',
-    course: passCourse,
-    section: passSection,
-    status: 'present',
-  });
+  function handleOpenWheelOfNames() {
+    Linking.openURL('https://wheelofnames.com/').catch(() => {
+      Alert.alert('Error', 'Could not open https://wheelofnames.com/');
+    });
+  }
 
-  const isSheetsConnected = Boolean(
-    sheetsConfig.sheetUrl.trim() || sheetsConfig.webhookUrl.trim()
-  );
+  const isWebhookConfigured = Boolean(sheetsConfig.webhookUrl.trim());
 
   return (
     <SafeAreaView style={styles.container}>
@@ -214,30 +164,25 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Top Bar / Header ── */}
+        {/* ── Top Bar ── */}
         <View style={styles.topBar}>
           <View>
             <View style={styles.titleBadgeRow}>
               <Ionicons name="sparkles" size={16} color={Colors.crimson} />
-              <Text style={styles.greeting}>Christmas QR & Raffle</Text>
+              <Text style={styles.greeting}>Christmas Party Check-In</Text>
             </View>
             <Text style={styles.headerSubtitle}>
-              Smart Check-In · Google Sheets · Roulette Draw
+              Bulk QR Scanner · Name & Department → Google Sheets
             </Text>
           </View>
 
           <View style={styles.topBarActions}>
             <TouchableOpacity
               style={styles.actionIconButton}
-              onPress={() =>
-                router.push({
-                  pathname: '/history',
-                  params: { studentName: currentName, studentId: currentId },
-                })
-              }
+              onPress={() => router.push('/history')}
               activeOpacity={0.7}
             >
-              <Ionicons name="time-outline" size={20} color={Colors.darkGreen} />
+              <Ionicons name="list-outline" size={20} color={Colors.darkGreen} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -250,7 +195,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ── Date & Time Card ── */}
+        {/* ── Live Event Clock Card ── */}
         <View style={styles.clockCard}>
           <View style={styles.clockIconCircle}>
             <Ionicons name="time" size={22} color={Colors.goldBright} />
@@ -259,50 +204,22 @@ export default function DashboardScreen() {
             <Text style={styles.liveTimeText}>{formattedTime}</Text>
             <Text style={styles.liveDateText}>{formattedDate}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.qrPassMiniBtn}
-            onPress={handleOpenQRPass}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="qr-code" size={16} color={Colors.darkGreen} />
-            <Text style={styles.qrPassMiniBtnText}>My QR Pass</Text>
-          </TouchableOpacity>
+          <View style={styles.livePill}>
+            <View style={styles.pulsingDot} />
+            <Text style={styles.livePillText}>LIVE</Text>
+          </View>
         </View>
 
-        {/* ── Christmas Raffle Roulette Banner Card ── */}
-        <TouchableOpacity
-          style={styles.raffleHeroCard}
-          onPress={() => router.push('/roulette')}
-          activeOpacity={0.88}
-        >
-          <View style={styles.raffleHeroIconCircle}>
-            <Ionicons name="gift" size={28} color={Colors.goldBright} />
-          </View>
-          <View style={{ flex: 1, gap: 3 }}>
-            <View style={styles.raffleHeroTagRow}>
-              <Text style={styles.raffleHeroBadgeText}>CHRISTMAS RAFFLE</Text>
-            </View>
-            <Text style={styles.raffleHeroTitle}>Spin the Roulette Wheel</Text>
-            <Text style={styles.raffleHeroSubtitle}>
-              {rafflePool.length} Eligible in Pool · {winners.length} Winners
-              Drawn
-            </Text>
-          </View>
-          <View style={styles.raffleHeroArrow}>
-            <Ionicons name="play" size={18} color={Colors.crimson} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ── Action Scan Button ── */}
+        {/* ── Primary Action: Scan Bulk QR Codes ── */}
         <View style={styles.scanSection}>
           <ScanButton
             onPress={handleScanPress}
             title="Scan Participant QR Code"
-            subtitle="Logs check-in to Google Sheets & enters Raffle Wheel"
+            subtitle="Reads Name & Department and sends to Google Sheets"
           />
         </View>
 
-        {/* ── Google Sheets Hybrid Connection Card ── */}
+        {/* ── Google Sheets Live Connection Card ── */}
         <View style={styles.sheetsCard}>
           <View style={styles.sheetsCardTop}>
             <View style={styles.sheetsIconCircle}>
@@ -310,12 +227,14 @@ export default function DashboardScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <View style={styles.sheetsStatusRow}>
-                <Text style={styles.sheetsCardTitle}>Google Sheets Sync</Text>
+                <Text style={styles.sheetsCardTitle}>
+                  Google Sheets Auto-Sync
+                </Text>
                 <View
                   style={[
                     styles.statusDotPill,
                     {
-                      backgroundColor: isSheetsConnected
+                      backgroundColor: isWebhookConfigured
                         ? Colors.presentBg
                         : Colors.goldLight,
                     },
@@ -325,18 +244,20 @@ export default function DashboardScreen() {
                     style={[
                       styles.statusDotPillText,
                       {
-                        color: isSheetsConnected ? Colors.present : Colors.gold,
+                        color: isWebhookConfigured
+                          ? Colors.present
+                          : Colors.gold,
                       },
                     ]}
                   >
-                    {isSheetsConnected ? 'Connected' : 'Local + Ready'}
+                    {isWebhookConfigured ? 'Auto-Sync ON' : 'Setup Sheet URL'}
                   </Text>
                 </View>
               </View>
               <Text style={styles.sheetsCardSub}>
-                {isSheetsConnected
-                  ? 'Syncing check-ins & participant names with Google Sheets'
-                  : 'Connect a Google Sheet URL or Apps Script to sync live names'}
+                {isWebhookConfigured
+                  ? 'Every scanned QR automatically adds Name & Department to your Google Sheet'
+                  : 'Connect your Google Sheet Web App URL to auto-save scanned participants'}
               </Text>
             </View>
           </View>
@@ -360,11 +281,11 @@ export default function DashboardScreen() {
             <TouchableOpacity
               style={styles.sheetsSyncNowBtn}
               onPress={async () => {
-                if (!isSheetsConnected) {
+                if (!isWebhookConfigured) {
                   handleOpenSheetsModal();
                   return;
                 }
-                const res = await syncWithGoogleSheets();
+                const res = await syncPendingToGoogleSheets();
                 Alert.alert('Google Sheets Sync', res.message);
               }}
               disabled={isSyncing}
@@ -373,28 +294,50 @@ export default function DashboardScreen() {
               {isSyncing ? (
                 <ActivityIndicator size="small" color={Colors.white} />
               ) : (
-                <Ionicons name="sync-outline" size={15} color={Colors.white} />
+                <Ionicons
+                  name="cloud-upload-outline"
+                  size={15}
+                  color={Colors.white}
+                />
               )}
               <Text style={styles.sheetsSyncNowText}>
-                {isSyncing ? 'Syncing...' : 'Sync Roster'}
+                {isSyncing ? 'Syncing...' : 'Push Unsynced'}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Quick Stats Summary ── */}
+        {/* ── WheelOfNames.com External Raffle Helper Card ── */}
+        <TouchableOpacity
+          style={styles.wheelExternalCard}
+          onPress={handleOpenWheelOfNames}
+          activeOpacity={0.85}
+        >
+          <View style={styles.wheelExternalIcon}>
+            <Ionicons name="open-outline" size={22} color={Colors.white} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.wheelExternalTitle}>
+              Open wheelofnames.com
+            </Text>
+            <Text style={styles.wheelExternalSub}>
+              Import your Google Sheet directly on wheelofnames.com for the
+              official raffle draw
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={Colors.crimson} />
+        </TouchableOpacity>
+
+        {/* ── Quick Check-In Overview (No Late Stat) ── */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Check-In Overview</Text>
+          <Text style={styles.sectionTitle}>Check-In Summary</Text>
           <TouchableOpacity
-            onPress={() =>
-              router.push({
-                pathname: '/history',
-                params: { studentName: currentName, studentId: currentId },
-              })
-            }
+            onPress={() => router.push('/history')}
             activeOpacity={0.7}
           >
-            <Text style={styles.viewHistoryLink}>View Logs & CSV →</Text>
+            <Text style={styles.viewHistoryLink}>
+              View Participant List →
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -405,84 +348,65 @@ export default function DashboardScreen() {
               size={22}
               color={Colors.present}
             />
-            <Text style={styles.statValue}>{stats.present}</Text>
+            <Text style={styles.statValue}>{stats.checkedIn}</Text>
             <Text style={styles.statLabel}>Checked In</Text>
           </View>
 
-          <View style={[styles.statBox, { borderColor: Colors.late }]}>
-            <Ionicons name="people" size={22} color={Colors.gold} />
-            <Text style={styles.statValue}>{rafflePool.length}</Text>
-            <Text style={styles.statLabel}>Raffle Pool</Text>
+          <View style={[styles.statBox, { borderColor: Colors.leafGreen }]}>
+            <Ionicons
+              name="cloud-done"
+              size={22}
+              color={Colors.leafGreen}
+            />
+            <Text style={styles.statValue}>{stats.synced}</Text>
+            <Text style={styles.statLabel}>In Google Sheet</Text>
           </View>
 
-          <View style={[styles.statBox, { borderColor: Colors.crimson }]}>
-            <Ionicons name="trophy" size={22} color={Colors.crimson} />
-            <Text style={styles.statValue}>{winners.length}</Text>
-            <Text style={styles.statLabel}>Winners</Text>
+          <View style={[styles.statBox, { borderColor: Colors.gold }]}>
+            <Ionicons name="briefcase" size={22} color={Colors.gold} />
+            <Text style={styles.statValue}>{stats.departments}</Text>
+            <Text style={styles.statLabel}>Departments</Text>
           </View>
         </View>
 
-        {/* ── Participant Profile Card (With Edit & QR Pass) ── */}
+        {/* ── Scanner Operator / Default Department Card ── */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Active Participant Profile</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity
-              onPress={handleOpenQRPass}
-              style={[
-                styles.editProfileChip,
-                { backgroundColor: Colors.goldLight },
-              ]}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="qr-code-outline" size={12} color={Colors.gold} />
-              <Text style={[styles.editProfileChipText, { color: Colors.gold }]}>
-                Generate QR
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handleOpenEditProfile}
-              style={styles.editProfileChip}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="pencil" size={12} color={Colors.leafGreen} />
-              <Text style={styles.editProfileChipText}>Edit Profile</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.sectionTitle}>Scanner Operator / Department</Text>
+          <TouchableOpacity
+            onPress={handleOpenEditProfile}
+            style={styles.editProfileChip}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil" size={12} color={Colors.leafGreen} />
+            <Text style={styles.editProfileChipText}>Edit Info</Text>
+          </TouchableOpacity>
         </View>
 
         <StudentCard
-          studentName={currentName}
-          studentId={currentId}
-          course={currentCourse}
-          section={currentSection}
+          participantName={staffName}
+          department={defaultDepartment}
           onEdit={handleOpenEditProfile}
         />
 
-        {/* ── Attendance History Quick Card ── */}
+        {/* ── Checked-In Participants List Card ── */}
         <TouchableOpacity
           style={styles.historyCardButton}
-          onPress={() =>
-            router.push({
-              pathname: '/history',
-              params: { studentName: currentName, studentId: currentId },
-            })
-          }
+          onPress={() => router.push('/history')}
           activeOpacity={0.8}
         >
           <View style={styles.historyIconCircle}>
             <Ionicons
-              name="receipt-outline"
+              name="people-outline"
               size={20}
               color={Colors.leafGreen}
             />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.historyBtnTitle}>
-              Check-In Logs & CSV Export
+              Checked-In Participants ({stats.checkedIn})
             </Text>
             <Text style={styles.historyBtnSubtitle}>
-              View scanned participants and export to Google Sheets
+              View scanned Names & Departments or copy for wheelofnames.com
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={Colors.olive} />
@@ -506,37 +430,18 @@ export default function DashboardScreen() {
                 <View style={styles.editAvatarMini}>
                   <Ionicons name="logo-google" size={18} color={Colors.white} />
                 </View>
-                <Text style={styles.modalTitle}>Google Sheets Connection</Text>
+                <Text style={styles.modalTitle}>Google Sheets Auto-Sync</Text>
               </View>
 
               <Text style={styles.modalSubtitleLeft}>
-                Connect your Google Sheet so QR check-ins and Roulette Wheel
-                participants sync automatically.
+                Every time you scan one of your 200+ participant QR codes, the
+                app immediately appends their Name and Department to your Google
+                Sheet.
               </Text>
 
-              {/* Option 1: Direct Public Google Sheet Link */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>
-                  1. Google Sheet Sharing Link (Reads Participant Names)
-                </Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={sheetUrlInput}
-                  onChangeText={setSheetUrlInput}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  placeholderTextColor={Colors.textMuted}
-                  autoCapitalize="none"
-                />
-                <Text style={styles.fieldHint}>
-                  Set your Google Sheet to &quot;Anyone with the link can
-                  view&quot;. Columns: Name, ID, Department, Section.
-                </Text>
-              </View>
-
-              {/* Option 2: Google Apps Script Webhook URL */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  2. Apps Script Web App URL (Live 2-Way Check-In & Winners)
+                  Google Apps Script Web App URL (Required for Auto-Write)
                 </Text>
                 <TextInput
                   style={styles.textInput}
@@ -546,9 +451,26 @@ export default function DashboardScreen() {
                   placeholderTextColor={Colors.textMuted}
                   autoCapitalize="none"
                 />
+                <Text style={styles.fieldHint}>
+                  Paste the Web App URL from your Google Sheet&apos;s Apps
+                  Script deployment.
+                </Text>
               </View>
 
-              {/* Toggle to view ready-to-copy Google Apps Script */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Google Sheet Link (Optional — for quick reference)
+                </Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={sheetUrlInput}
+                  onChangeText={setSheetUrlInput}
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  placeholderTextColor={Colors.textMuted}
+                  autoCapitalize="none"
+                />
+              </View>
+
               <TouchableOpacity
                 style={styles.scriptToggleBtn}
                 onPress={() => setShowScriptCode(!showScriptCode)}
@@ -560,16 +482,17 @@ export default function DashboardScreen() {
                 />
                 <Text style={styles.scriptToggleText}>
                   {showScriptCode
-                    ? 'Hide Google Apps Script Template'
-                    : 'Show Ready-to-Paste Google Apps Script (2-Way Sync)'}
+                    ? 'Hide Google Apps Script Code'
+                    : 'Show Google Apps Script to Paste in Your Sheet'}
                 </Text>
               </TouchableOpacity>
 
               {showScriptCode && (
                 <View style={styles.scriptCodeBox}>
                   <Text style={styles.scriptCodeHint}>
-                    Select & copy this into Extensions → Apps Script in your
-                    Google Sheet:
+                    In your Google Sheet, click Extensions → Apps Script, paste
+                    this code, and click Deploy → New deployment → Web app
+                    (Access: Anyone):
                   </Text>
                   <TextInput
                     style={styles.scriptCodeInput}
@@ -606,7 +529,7 @@ export default function DashboardScreen() {
                   disabled={isSyncing}
                 >
                   <Text style={styles.modalSaveText}>
-                    {isSyncing ? 'Syncing...' : 'Save & Sync Sheet'}
+                    {isSyncing ? 'Syncing...' : 'Save & Sync'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -615,67 +538,7 @@ export default function DashboardScreen() {
         </View>
       </Modal>
 
-      {/* ── Built-In Participant QR Pass Generator Modal ── */}
-      <Modal
-        visible={showQRPassModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowQRPassModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.editModalHeader}>
-              <View
-                style={[
-                  styles.editAvatarMini,
-                  { backgroundColor: Colors.crimson },
-                ]}
-              >
-                <Ionicons name="qr-code" size={18} color={Colors.white} />
-              </View>
-              <Text style={styles.modalTitle}>Christmas Party QR Pass</Text>
-            </View>
-
-            <View style={styles.qrPreviewBox}>
-              <QRCode
-                value={generatedQRValue}
-                size={180}
-                color={Colors.darkGreen}
-                backgroundColor={Colors.white}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Participant Name</Text>
-              <TextInput
-                style={styles.textInput}
-                value={passName}
-                onChangeText={setPassName}
-                placeholder="Enter participant name"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Participant / Student ID</Text>
-              <TextInput
-                style={styles.textInput}
-                value={passId}
-                onChangeText={setPassId}
-                placeholder="e.g. 2024305392"
-              />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.modalSaveBtn, { width: '100%', marginTop: 4 }]}
-              onPress={() => setShowQRPassModal(false)}
-            >
-              <Text style={styles.modalSaveText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ── Edit Profile Modal ── */}
+      {/* ── Edit Operator / Default Department Modal ── */}
       <Modal
         visible={showEditModal}
         transparent
@@ -686,26 +549,13 @@ export default function DashboardScreen() {
           <View style={styles.modalCard}>
             <View style={styles.editModalHeader}>
               <View style={styles.editAvatarMini}>
-                <Ionicons name="person" size={20} color={Colors.white} />
+                <Ionicons name="briefcase" size={18} color={Colors.white} />
               </View>
-              <Text style={styles.modalTitle}>Edit Participant Profile</Text>
+              <Text style={styles.modalTitle}>Edit Operator & Department</Text>
             </View>
 
-            {/* Student / Participant ID Input */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Participant / Student ID</Text>
-              <TextInput
-                style={styles.textInput}
-                value={editId}
-                onChangeText={setEditId}
-                placeholder="Enter ID #"
-                placeholderTextColor={Colors.textMuted}
-              />
-            </View>
-
-            {/* Full Name Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Full Name</Text>
+              <Text style={styles.inputLabel}>Operator / Staff Name</Text>
               <TextInput
                 style={styles.textInput}
                 value={editName}
@@ -715,28 +565,36 @@ export default function DashboardScreen() {
               />
             </View>
 
-            {/* Course Selector */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Department / Course</Text>
+              <Text style={styles.inputLabel}>
+                Default Department (used if a QR code only contains a Name)
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                value={editDept}
+                onChangeText={setEditDept}
+                placeholder="e.g. IT & Operations, HR, Finance"
+                placeholderTextColor={Colors.textMuted}
+              />
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View style={styles.chipRow}>
-                  {COURSES.map((c) => (
+                  {WORK_DEPARTMENTS.map((dept) => (
                     <TouchableOpacity
-                      key={c}
+                      key={dept}
                       style={[
                         styles.modalChip,
-                        editCourse === c && styles.modalChipSelected,
+                        editDept === dept && styles.modalChipSelected,
                       ]}
-                      onPress={() => setEditCourse(c)}
+                      onPress={() => setEditDept(dept)}
                       activeOpacity={0.8}
                     >
                       <Text
                         style={[
                           styles.modalChipText,
-                          editCourse === c && styles.modalChipTextSelected,
+                          editDept === dept && styles.modalChipTextSelected,
                         ]}
                       >
-                        {c}
+                        {dept}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -744,34 +602,6 @@ export default function DashboardScreen() {
               </ScrollView>
             </View>
 
-            {/* Section Selector */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Section / Group</Text>
-              <View style={styles.chipRow}>
-                {SECTIONS.map((s) => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[
-                      styles.modalChip,
-                      editSection === s && styles.modalChipSelected,
-                    ]}
-                    onPress={() => setEditSection(s)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.modalChipText,
-                        editSection === s && styles.modalChipTextSelected,
-                      ]}
-                    >
-                      {s}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            {/* Action Buttons */}
             <View style={styles.modalButtonRow}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
@@ -786,7 +616,7 @@ export default function DashboardScreen() {
                 onPress={handleSaveProfile}
                 activeOpacity={0.85}
               >
-                <Text style={styles.modalSaveText}>Save Profile</Text>
+                <Text style={styles.modalSaveText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -807,8 +637,6 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xxxl,
     gap: Spacing.md,
   },
-
-  // Top Bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -846,7 +674,7 @@ const styles = StyleSheet.create({
     ...Shadow.card,
   },
 
-  // Live Clock Card
+  // Clock Card
   clockCard: {
     backgroundColor: Colors.darkGreen,
     borderRadius: Radius.lg,
@@ -878,69 +706,30 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     marginTop: 2,
   },
-  qrPassMiniBtn: {
+  livePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: Colors.goldBright,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 8,
-    borderRadius: Radius.pill,
-  },
-  qrPassMiniBtnText: {
-    fontSize: FontSize.xs,
-    fontWeight: '800',
-    color: Colors.darkGreen,
-  },
-
-  // Raffle Hero Card
-  raffleHeroCard: {
-    backgroundColor: Colors.crimson,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    ...Shadow.button,
-  },
-  raffleHeroIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
     backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  raffleHeroTagRow: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: Radius.pill,
   },
-  raffleHeroBadgeText: {
+  pulsingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#00E676',
+  },
+  livePillText: {
     fontSize: 10,
     fontWeight: '800',
-    color: Colors.goldLight,
-    letterSpacing: 0.8,
-  },
-  raffleHeroTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '800',
     color: Colors.white,
+    letterSpacing: 0.6,
   },
-  raffleHeroSubtitle: {
-    fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
-  },
-  raffleHeroArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.goldBright,
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  scanSection: {
+    marginTop: 2,
   },
 
   // Google Sheets Card
@@ -989,6 +778,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.olive,
     marginTop: 2,
+    lineHeight: 16,
   },
   sheetsButtonRow: {
     flexDirection: 'row',
@@ -1025,6 +815,37 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.white,
+  },
+
+  // Wheel of Names External Card
+  wheelExternalCard: {
+    backgroundColor: Colors.crimsonLight,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    borderWidth: 1.5,
+    borderColor: Colors.crimson,
+  },
+  wheelExternalIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.crimson,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wheelExternalTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+    color: Colors.crimson,
+  },
+  wheelExternalSub: {
+    fontSize: 11,
+    color: Colors.textPrimary,
+    marginTop: 1,
+    lineHeight: 15,
   },
 
   // Section Header
@@ -1085,11 +906,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Scan Section
-  scanSection: {
-    marginTop: 2,
-  },
-
   // History Card Button
   historyCardButton: {
     backgroundColor: Colors.white,
@@ -1122,7 +938,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Modals Common Styles
+  // Modals
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -1174,19 +990,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qrPreviewBox: {
-    padding: Spacing.lg,
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    borderWidth: 2,
-    borderColor: Colors.goldBright,
-    marginVertical: Spacing.md,
-    ...Shadow.card,
-  },
   inputGroup: {
     width: '100%',
     marginBottom: Spacing.md,
-    gap: 4,
+    gap: 6,
   },
   inputLabel: {
     fontSize: FontSize.xs,
@@ -1238,7 +1045,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: 'monospace',
     color: Colors.textPrimary,
-    maxHeight: 110,
+    maxHeight: 120,
     backgroundColor: Colors.white,
     padding: 6,
     borderRadius: 6,

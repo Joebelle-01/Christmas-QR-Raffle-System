@@ -1,7 +1,7 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
+// Work Christmas Party – Smart QR Check-In Scanner
 // Component: AttendanceCard
-// Shows: Student name, ID, course, section, time, date
+// Shows: Participant Name, Department, Time, Date, Sheet Sync
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -9,100 +9,78 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
-import { AttendanceStatus } from '@/components/StatusMessage';
-
-const STATUS_BORDER: Record<AttendanceStatus, string> = {
-  present: Colors.present,
-  late: Colors.late,
-  absent: Colors.absent,
-  invalid: Colors.textMuted,
-};
-
-const STATUS_LABEL: Record<AttendanceStatus, string> = {
-  present: 'Present',
-  late: 'Late',
-  absent: 'Absent',
-  invalid: 'Invalid',
-};
-
-const STATUS_BG: Record<AttendanceStatus, string> = {
-  present: Colors.presentBg,
-  late: Colors.lateBg,
-  absent: Colors.absentBg,
-  invalid: Colors.beige,
-};
 
 type Props = {
-  studentName: string;
-  studentId: string;
-  course: string;
-  section: string;
-  status: AttendanceStatus;
-  timestamp: string;  // e.g. "10:45 AM"
-  date: string;       // e.g. "October 1, 2026"
-  subject?: string;   // e.g. "CS101"
+  participantName: string;
+  department: string;
+  timestamp: string; // e.g. "06:45 PM"
+  date: string;      // e.g. "December 20, 2026"
+  syncedToSheet?: boolean;
 };
 
 export function AttendanceCard({
-  studentName,
-  studentId,
-  course,
-  section,
-  status,
+  participantName,
+  department,
   timestamp,
   date,
-  subject,
+  syncedToSheet,
 }: Props) {
-  const borderColor = STATUS_BORDER[status] || Colors.textMuted;
-  const statusLabel = STATUS_LABEL[status] || 'Invalid';
-  const statusBg = STATUS_BG[status] || Colors.beige;
-
   return (
-    <View style={[styles.card, { borderLeftColor: borderColor }]}>
-      {/* Student Info */}
-      <View style={styles.studentRow}>
-        <View style={[styles.avatarCircle, { backgroundColor: borderColor }]}>
+    <View style={[styles.card, { borderLeftColor: Colors.present }]}>
+      {/* Participant Info */}
+      <View style={styles.participantRow}>
+        <View style={[styles.avatarCircle, { backgroundColor: Colors.present }]}>
           <Ionicons name="person" size={22} color={Colors.white} />
         </View>
-        <View style={styles.studentInfo}>
-          <Text style={styles.studentName}>{studentName}</Text>
-          <Text style={styles.studentId}>{studentId}</Text>
+        <View style={styles.participantInfo}>
+          <Text style={styles.participantName}>{participantName}</Text>
+          <View style={styles.deptRow}>
+            <Ionicons name="briefcase-outline" size={14} color={Colors.olive} />
+            <Text style={styles.departmentText}>{department}</Text>
+          </View>
         </View>
         {/* Status pill */}
-        <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
-          <Text style={[styles.statusPillText, { color: borderColor }]}>{statusLabel}</Text>
+        <View style={[styles.statusPill, { backgroundColor: Colors.presentBg }]}>
+          <Text style={[styles.statusPillText, { color: Colors.present }]}>
+            Checked In
+          </Text>
         </View>
       </View>
 
       {/* Divider */}
       <View style={styles.divider} />
 
-      {/* Subject, Course & Section */}
-      <View style={styles.row}>
-        <Ionicons name="book-outline" size={16} color={Colors.leafGreen} />
-        <Text style={styles.subjectText}>{subject || 'CS101'}</Text>
-      </View>
-      <View style={styles.row}>
-        <Ionicons name="school-outline" size={16} color={Colors.olive} />
-        <Text style={styles.metaText}>{course}</Text>
-      </View>
-      <View style={styles.row}>
-        <Ionicons name="people-outline" size={16} color={Colors.olive} />
-        <Text style={styles.metaText}>Section: {section}</Text>
+      {/* Time, Date & Google Sheets Status */}
+      <View style={styles.metaGrid}>
+        <View style={styles.row}>
+          <Ionicons name="time-outline" size={16} color={Colors.olive} />
+          <Text style={styles.timeText}>{timestamp}</Text>
+        </View>
+        <View style={styles.row}>
+          <Ionicons name="calendar-outline" size={16} color={Colors.olive} />
+          <Text style={styles.metaText}>{date}</Text>
+        </View>
       </View>
 
-      {/* Divider */}
-      <View style={styles.divider} />
-
-      {/* Time & Date */}
-      <View style={styles.row}>
-        <Ionicons name="time-outline" size={16} color={Colors.olive} />
-        <Text style={styles.timeText}>{timestamp}</Text>
-      </View>
-      <View style={styles.row}>
-        <Ionicons name="calendar-outline" size={16} color={Colors.olive} />
-        <Text style={styles.metaText}>{date}</Text>
-      </View>
+      {syncedToSheet !== undefined && (
+        <View style={styles.sheetBadgeRow}>
+          <Ionicons
+            name={syncedToSheet ? 'cloud-done-outline' : 'checkmark-circle-outline'}
+            size={14}
+            color={syncedToSheet ? Colors.leafGreen : Colors.olive}
+          />
+          <Text
+            style={[
+              styles.sheetBadgeText,
+              syncedToSheet && { color: Colors.leafGreen, fontWeight: '700' },
+            ]}
+          >
+            {syncedToSheet
+              ? 'Synced to Google Sheets'
+              : 'Saved to Device Check-In List'}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -111,14 +89,12 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
-    padding: Spacing.xl,
+    padding: Spacing.lg,
     borderLeftWidth: 5,
     gap: Spacing.sm,
     ...Shadow.card,
   },
-
-  // Student row
-  studentRow: {
+  participantRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
@@ -130,21 +106,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  studentInfo: {
+  participantInfo: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
-  studentName: {
+  participantName: {
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
   },
-  studentId: {
-    fontSize: FontSize.sm,
-    color: Colors.textMuted,
+  deptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-
-  // Status pill
+  departmentText: {
+    fontSize: FontSize.sm,
+    color: Colors.olive,
+    fontWeight: '600',
+  },
   statusPill: {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
@@ -155,30 +135,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-
-  // Meta rows
   divider: {
     height: 1,
     backgroundColor: Colors.border,
-    marginVertical: Spacing.xs,
+    marginVertical: 2,
+  },
+  metaGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 6,
   },
   metaText: {
-    fontSize: FontSize.sm,
+    fontSize: FontSize.xs,
     color: Colors.olive,
-  },
-  subjectText: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.leafGreen,
+    fontWeight: '500',
   },
   timeText: {
-    fontSize: FontSize.lg,
+    fontSize: FontSize.sm,
     fontWeight: '700',
     color: Colors.textPrimary,
+  },
+  sheetBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  sheetBadgeText: {
+    fontSize: 11,
+    color: Colors.olive,
   },
 });

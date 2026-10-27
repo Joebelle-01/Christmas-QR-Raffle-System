@@ -13,7 +13,6 @@ export default function RootLayout() {
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="scanner" />
         <Stack.Screen name="attendance-result" />
-        <Stack.Screen name="roulette" />
         <Stack.Screen name="history" />
       </Stack>
     </AttendanceProvider>

@@ -1,7 +1,7 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
+// Work Christmas Party – Smart QR Check-In Scanner
 // Component: StatusMessage
-// Shows: Present ✅ / Absent ❌ / Invalid ⚠️
+// Shows: Checked In (present) ✅ or Invalid QR Code (invalid) ⚠️
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
 
-export type AttendanceStatus = 'present' | 'late' | 'absent' | 'invalid';
+export type AttendanceStatus = 'present' | 'invalid';
 
 const STATUS_CONFIG: Record<
   AttendanceStatus,
@@ -26,29 +26,15 @@ const STATUS_CONFIG: Record<
     icon: 'checkmark-circle',
     color: Colors.present,
     bg: Colors.presentBg,
-    label: 'Attendance Marked!',
-    sub: 'Your attendance has been recorded successfully.',
-  },
-  late: {
-    icon: 'time',
-    color: Colors.late,
-    bg: Colors.lateBg,
-    label: 'Marked as Late',
-    sub: 'Your attendance was recorded after session start.',
-  },
-  absent: {
-    icon: 'close-circle',
-    color: Colors.absent,
-    bg: Colors.absentBg,
-    label: 'Marked as Absent',
-    sub: 'You were not able to scan in time.',
+    label: 'Participant Checked In!',
+    sub: 'Participant name and department have been recorded to the check-in list and Google Sheets.',
   },
   invalid: {
     icon: 'warning',
-    color: Colors.olive,
-    bg: Colors.beige,
+    color: Colors.absent,
+    bg: Colors.absentBg,
     label: 'Invalid QR Code',
-    sub: 'The QR code could not be verified. Please try again.',
+    sub: 'This QR code is unreadable or not a valid participant pass. No participant was recorded.',
   },
 };
 

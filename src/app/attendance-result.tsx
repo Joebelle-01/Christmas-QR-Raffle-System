@@ -1,8 +1,11 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance & Christmas Raffle System
-// Screen: Attendance Result Screen (attendance-result.tsx)
-// Shows: Status, Raffle Entry Confirmation, Participant Card,
-//        Scan Next Guest / Open Raffle Wheel / Back to Dashboard
+// Work Christmas Party – Smart QR Check-In Scanner
+// Screen: Check-In Result Screen (attendance-result.tsx)
+// IMPORTANT:
+//   - If status === 'invalid', ONLY shows "Invalid QR Code"
+//     (NEVER displays any participant name or card).
+//   - If status === 'present', shows Participant Name & Department
+//     and confirms Google Sheets sync for wheelofnames.com.
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -24,13 +27,8 @@ import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 
 function validateStatus(raw: string | string[] | undefined): AttendanceStatus {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (
-    value === 'present' ||
-    value === 'late' ||
-    value === 'absent' ||
-    value === 'invalid'
-  ) {
-    return value;
+  if (value === 'present') {
+    return 'present';
   }
   return 'invalid';
 }
@@ -53,18 +51,13 @@ function formatDate(date: Date): string {
 
 const STATUS_BG: Record<AttendanceStatus, string> = {
   present: '#F0FAF3',
-  late: '#FFFBEB',
-  absent: '#FFF5F5',
-  invalid: Colors.beige,
+  invalid: '#FFF5F5',
 };
 
 export default function AttendanceResultScreen() {
   const params = useLocalSearchParams<{
-    studentName?: string;
-    studentId?: string;
-    course?: string;
-    section?: string;
-    subject?: string;
+    participantName?: string;
+    department?: string;
     status?: string;
     time?: string;
     timestamp?: string;
@@ -81,7 +74,7 @@ export default function AttendanceResultScreen() {
   const date = params.date || defaultDate;
 
   const bgColor = STATUS_BG[status];
-  const isRaffleEligible = status === 'present' || status === 'late';
+  const isValidCheckIn = status === 'present' && Boolean(params.participantName);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
@@ -103,87 +96,54 @@ export default function AttendanceResultScreen() {
         {/* Page Title */}
         <Text style={styles.pageTitle}>Check-In Result</Text>
 
-        {/* Status Message — animated icon + text */}
-        <StatusMessage status={status} />
+        {/* Animated Status Message (Checked In vs Invalid QR Code) */}
+        <StatusMessage status={isValidCheckIn ? 'present' : 'invalid'} />
 
-        {/* Raffle Entry Confirmed Banner */}
-        {isRaffleEligible && (
-          <View style={styles.raffleTicketBanner}>
-            <View style={styles.raffleTicketIcon}>
-              <Ionicons name="gift" size={22} color={Colors.crimson} />
+        {/* ONLY show Participant Card & Google Sheets banner when QR is VALID */}
+        {isValidCheckIn ? (
+          <>
+            <View style={styles.sheetSyncBanner}>
+              <View style={styles.sheetSyncIcon}>
+                <Ionicons
+                  name="logo-google"
+                  size={20}
+                  color={Colors.leafGreen}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.sheetSyncTitle}>
+                  Added to Google Sheets Raffle List
+                </Text>
+                <Text style={styles.sheetSyncSub}>
+                  Ready to import into wheelofnames.com for the Christmas party
+                  raffle
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.raffleTicketTitle}>
-                Raffle Entry Confirmed!
-              </Text>
-              <Text style={styles.raffleTicketSub}>
-                Added to the Christmas Roulette Wheel & synced with Google
-                Sheets
-              </Text>
-            </View>
-            <Ionicons name="sparkles" size={18} color={Colors.goldBright} />
-          </View>
-        )}
 
-        {/* Attendance Card — participant info + event + time + date */}
-        <AttendanceCard
-          studentName={params.studentName || 'Joebelle Dumapias'}
-          studentId={params.studentId || '2024305392'}
-          course={params.course || 'BS Information Technology'}
-          section={params.section || 'IT-3A'}
-          subject={params.subject || 'Christmas Party 2026'}
-          status={status}
-          timestamp={timestamp}
-          date={date}
-        />
+            <AttendanceCard
+              participantName={params.participantName!}
+              department={params.department || 'General'}
+              timestamp={timestamp}
+              date={date}
+            />
+          </>
+        ) : null}
 
         {/* Action Buttons */}
         <View style={styles.actionGroup}>
           <TouchableOpacity
             style={styles.scanAgainBtn}
-            onPress={() =>
-              router.replace({
-                pathname: '/scanner',
-                params: {
-                  studentName: params.studentName,
-                  studentId: params.studentId,
-                  course: params.course,
-                  section: params.section,
-                },
-              })
-            }
+            onPress={() => router.replace('/scanner')}
             activeOpacity={0.85}
           >
             <Ionicons name="scan-outline" size={20} color={Colors.white} />
-            <Text style={styles.scanAgainBtnText}>Scan Next Participant</Text>
+            <Text style={styles.scanAgainBtnText}>Scan Next QR Code</Text>
           </TouchableOpacity>
-
-          {isRaffleEligible && (
-            <TouchableOpacity
-              style={styles.rouletteBtn}
-              onPress={() => router.replace('/roulette')}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="gift-outline" size={20} color={Colors.crimson} />
-              <Text style={styles.rouletteBtnText}>
-                Go to Christmas Raffle Wheel
-              </Text>
-            </TouchableOpacity>
-          )}
 
           <TouchableOpacity
             style={styles.doneBtn}
-            onPress={() =>
-              router.replace({
-                pathname: '/dashboard',
-                params: {
-                  studentName: params.studentName,
-                  studentId: params.studentId,
-                  course: params.course,
-                  section: params.section,
-                },
-              })
-            }
+            onPress={() => router.replace('/dashboard')}
             activeOpacity={0.85}
           >
             <Ionicons
@@ -225,33 +185,33 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
     marginBottom: Spacing.lg,
   },
-  raffleTicketBanner: {
+  sheetSyncBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    backgroundColor: Colors.goldLight,
+    backgroundColor: Colors.lightGreen,
     borderWidth: 1.5,
-    borderColor: Colors.goldBright,
+    borderColor: Colors.leafGreen,
     borderRadius: Radius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
   },
-  raffleTicketIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  sheetSyncIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: Colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  raffleTicketTitle: {
+  sheetSyncTitle: {
     fontSize: FontSize.sm,
     fontWeight: '800',
-    color: Colors.crimson,
+    color: Colors.darkGreen,
   },
-  raffleTicketSub: {
+  sheetSyncSub: {
     fontSize: 11,
-    color: Colors.textPrimary,
+    color: Colors.olive,
     marginTop: 1,
   },
   actionGroup: {
@@ -270,22 +230,6 @@ const styles = StyleSheet.create({
   },
   scanAgainBtnText: {
     color: Colors.white,
-    fontSize: FontSize.md,
-    fontWeight: '700',
-  },
-  rouletteBtn: {
-    backgroundColor: Colors.crimsonLight,
-    height: 50,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-    borderColor: Colors.crimson,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-  },
-  rouletteBtnText: {
-    color: Colors.crimson,
     fontSize: FontSize.md,
     fontWeight: '700',
   },
