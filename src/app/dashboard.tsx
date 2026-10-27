@@ -1,22 +1,22 @@
 // ============================================================
 // Work Christmas Party – Smart QR Check-In Scanner
-// Screen: DashboardScreen (dashboard.tsx)
+// Screen: DashboardScreen (dashboard.tsx) — 100% User-Friendly
 // Features:
-//   - QR Scanner Launcher (for 200+ bulk third-party QR passes)
-//   - Google Sheets Auto-Sync Setup (sends Name & Department on scan)
-//   - External Link to https://wheelofnames.com/ for fair raffle draw
-//   - Live Check-In Overview (Checked In, Synced, Departments — No Late)
+//   - Zero technical setup required for normal users
+//   - 1-Tap "Scan Participant QR Code" (for 200+ bulk QR passes)
+//   - 1-Tap "Copy Names & Open WheelOfNames.com" (auto-copies list!)
+//   - 1-Tap "Copy Table for Google Sheets" & Native Share export
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Linking,
   Modal,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -31,7 +31,11 @@ import { StudentCard } from '@/components/StudentCard';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAttendance } from '@/context/attendance-context';
 import { getStaffProfile, saveStaffProfile } from '@/services/auth-storage';
-import { GOOGLE_APPS_SCRIPT_TEMPLATE } from '@/services/google-sheets';
+import {
+  copyNamesToClipboard,
+  copyTableForSheets,
+  formatRecordsAsCSV,
+} from '@/services/google-sheets';
 
 const WORK_DEPARTMENTS = [
   'IT & Operations',
@@ -44,7 +48,6 @@ const WORK_DEPARTMENTS = [
 ];
 
 export default function DashboardScreen() {
-  // ── Staff / Default Department State ────────────────────
   const [staffName, setStaffName] = useState('Joebelle Dumapias');
   const [defaultDepartment, setDefaultDepartment] =
     useState('IT & Operations');
@@ -54,21 +57,10 @@ export default function DashboardScreen() {
   const [editName, setEditName] = useState(staffName);
   const [editDept, setEditDept] = useState(defaultDepartment);
 
-  // ── Google Sheets Setup Modal State ─────────────────────
-  const [showSheetsModal, setShowSheetsModal] = useState(false);
-  const [sheetUrlInput, setSheetUrlInput] = useState('');
-  const [webhookUrlInput, setWebhookUrlInput] = useState('');
-  const [showScriptCode, setShowScriptCode] = useState(false);
-  const [syncNotice, setSyncNotice] = useState('');
+  // ── Feedback Banner State ───────────────────────────────
+  const [copiedBanner, setCopiedBanner] = useState('');
 
-  // ── Attendance Context ──────────────────────────────────
-  const {
-    stats,
-    sheetsConfig,
-    isSyncing,
-    updateSheetsConfig,
-    syncPendingToGoogleSheets,
-  } = useAttendance();
+  const { records, stats } = useAttendance();
 
   useEffect(() => {
     getStaffProfile().then((saved) => {
@@ -102,6 +94,13 @@ export default function DashboardScreen() {
   });
 
   // ── Handlers ─────────────────────────────────────────────
+  function showTempBanner(msg: string) {
+    setCopiedBanner(msg);
+    setTimeout(() => {
+      setCopiedBanner('');
+    }, 4500);
+  }
+
   function handleOpenEditProfile() {
     setEditName(staffName);
     setEditDept(defaultDepartment);
@@ -122,23 +121,6 @@ export default function DashboardScreen() {
     setShowEditModal(false);
   }
 
-  function handleOpenSheetsModal() {
-    setSheetUrlInput(sheetsConfig.sheetUrl || '');
-    setWebhookUrlInput(sheetsConfig.webhookUrl || '');
-    setSyncNotice('');
-    setShowSheetsModal(true);
-  }
-
-  async function handleSaveAndSyncSheets() {
-    const updated = await updateSheetsConfig({
-      sheetUrl: sheetUrlInput.trim(),
-      webhookUrl: webhookUrlInput.trim(),
-      autoSync: true,
-    });
-    const result = await syncPendingToGoogleSheets(updated);
-    setSyncNotice(result.message);
-  }
-
   function handleScanPress() {
     router.push({
       pathname: '/scanner',
@@ -148,13 +130,68 @@ export default function DashboardScreen() {
     });
   }
 
-  function handleOpenWheelOfNames() {
+  // 1-Tap: Copy all scanned names to clipboard & open wheelofnames.com
+  async function handleWheelOfNamesPress() {
+    if (records.length === 0) {
+      Alert.alert(
+        'No Participants Scanned Yet',
+        'Scan participant QR codes first! Once scanned, tapping this button will automatically copy all names and open wheelofnames.com.'
+      );
+      return;
+    }
+
+    await copyNamesToClipboard(records);
+    showTempBanner(
+      `Copied ${records.length} participant${
+        records.length === 1 ? '' : 's'
+      }! Just press Paste on wheelofnames.com`
+    );
+
     Linking.openURL('https://wheelofnames.com/').catch(() => {
-      Alert.alert('Error', 'Could not open https://wheelofnames.com/');
+      Alert.alert(
+        'Names Copied!',
+        'All participant names have been copied to your clipboard. Open wheelofnames.com and paste them!'
+      );
     });
   }
 
-  const isWebhookConfigured = Boolean(sheetsConfig.webhookUrl.trim());
+  // 1-Tap: Copy table for Google Sheets (splits into columns automatically on paste)
+  async function handleCopyForGoogleSheets() {
+    if (records.length === 0) {
+      Alert.alert(
+        'No Participants Scanned Yet',
+        'Scan participant QR codes first, then tap here to copy or share to Google Sheets.'
+      );
+      return;
+    }
+
+    await copyTableForSheets(records);
+    showTempBanner(
+      `Copied ${records.length} rows! Open any Google Sheet and press Paste (Ctrl+V)`
+    );
+  }
+
+  // 1-Tap: Share CSV to Google Drive / Sheets / Email / Messenger
+  async function handleShareSheet() {
+    if (records.length === 0) {
+      Alert.alert(
+        'No Participants Scanned Yet',
+        'Scan participant QR codes first before exporting.'
+      );
+      return;
+    }
+
+    const csv = formatRecordsAsCSV(records);
+    try {
+      await Share.share({
+        title: 'Christmas Party Check-In List',
+        message: csv,
+      });
+    } catch {
+      await copyTableForSheets(records);
+      showTempBanner('Copied check-in table to clipboard!');
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -172,7 +209,7 @@ export default function DashboardScreen() {
               <Text style={styles.greeting}>Christmas Party Check-In</Text>
             </View>
             <Text style={styles.headerSubtitle}>
-              Bulk QR Scanner · Name & Department → Google Sheets
+              Scan QR Passes · Export to Google Sheets & Wheel of Names
             </Text>
           </View>
 
@@ -206,7 +243,7 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.livePill}>
             <View style={styles.pulsingDot} />
-            <Text style={styles.livePillText}>LIVE</Text>
+            <Text style={styles.livePillText}>READY</Text>
           </View>
         </View>
 
@@ -215,118 +252,84 @@ export default function DashboardScreen() {
           <ScanButton
             onPress={handleScanPress}
             title="Scan Participant QR Code"
-            subtitle="Reads Name & Department and sends to Google Sheets"
+            subtitle="Automatically saves Name & Department to Check-In List"
           />
         </View>
 
-        {/* ── Google Sheets Live Connection Card ── */}
-        <View style={styles.sheetsCard}>
-          <View style={styles.sheetsCardTop}>
-            <View style={styles.sheetsIconCircle}>
-              <Ionicons name="logo-google" size={20} color={Colors.leafGreen} />
+        {/* ── Instant Feedback Toast Banner ── */}
+        {copiedBanner ? (
+          <View style={styles.copiedToast}>
+            <Ionicons
+              name="checkmark-circle"
+              size={18}
+              color={Colors.leafGreen}
+            />
+            <Text style={styles.copiedToastText}>{copiedBanner}</Text>
+          </View>
+        ) : null}
+
+        {/* ── 1-Tap Raffle & Google Sheets Card (Zero Technical Setup!) ── */}
+        <View style={styles.easyExportCard}>
+          <View style={styles.easyExportHeader}>
+            <View style={styles.easyExportIconCircle}>
+              <Ionicons name="gift" size={20} color={Colors.crimson} />
             </View>
             <View style={{ flex: 1 }}>
-              <View style={styles.sheetsStatusRow}>
-                <Text style={styles.sheetsCardTitle}>
-                  Google Sheets Auto-Sync
-                </Text>
-                <View
-                  style={[
-                    styles.statusDotPill,
-                    {
-                      backgroundColor: isWebhookConfigured
-                        ? Colors.presentBg
-                        : Colors.goldLight,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusDotPillText,
-                      {
-                        color: isWebhookConfigured
-                          ? Colors.present
-                          : Colors.gold,
-                      },
-                    ]}
-                  >
-                    {isWebhookConfigured ? 'Auto-Sync ON' : 'Setup Sheet URL'}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.sheetsCardSub}>
-                {isWebhookConfigured
-                  ? 'Every scanned QR automatically adds Name & Department to your Google Sheet'
-                  : 'Connect your Google Sheet Web App URL to auto-save scanned participants'}
+              <Text style={styles.easyExportTitle}>
+                Raffle & Google Sheets (1-Tap)
+              </Text>
+              <Text style={styles.easyExportSub}>
+                {records.length} participant
+                {records.length === 1 ? '' : 's'} ready — no coding or setup
+                needed!
               </Text>
             </View>
           </View>
 
-          <View style={styles.sheetsButtonRow}>
+          {/* Button 1: Copy Names & Open wheelofnames.com */}
+          <TouchableOpacity
+            style={styles.wheelPrimaryBtn}
+            onPress={handleWheelOfNamesPress}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="copy-outline" size={18} color={Colors.white} />
+            <Text style={styles.wheelPrimaryBtnText}>
+              Copy All Names & Open wheelofnames.com
+            </Text>
+            <Ionicons name="open-outline" size={16} color={Colors.goldLight} />
+          </TouchableOpacity>
+
+          {/* Button 2: Copy Table for Google Sheets + Share */}
+          <View style={styles.sheetsBtnRow}>
             <TouchableOpacity
-              style={styles.sheetsConfigBtn}
-              onPress={handleOpenSheetsModal}
-              activeOpacity={0.8}
+              style={styles.sheetsCopyBtn}
+              onPress={handleCopyForGoogleSheets}
+              activeOpacity={0.85}
             >
               <Ionicons
-                name="settings-outline"
+                name="logo-google"
+                size={15}
+                color={Colors.leafGreen}
+              />
+              <Text style={styles.sheetsCopyBtnText}>
+                Copy for Google Sheets
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sheetsShareBtn}
+              onPress={handleShareSheet}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="share-social-outline"
                 size={15}
                 color={Colors.darkGreen}
               />
-              <Text style={styles.sheetsConfigBtnText}>
-                Configure Google Sheet
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.sheetsSyncNowBtn}
-              onPress={async () => {
-                if (!isWebhookConfigured) {
-                  handleOpenSheetsModal();
-                  return;
-                }
-                const res = await syncPendingToGoogleSheets();
-                Alert.alert('Google Sheets Sync', res.message);
-              }}
-              disabled={isSyncing}
-              activeOpacity={0.8}
-            >
-              {isSyncing ? (
-                <ActivityIndicator size="small" color={Colors.white} />
-              ) : (
-                <Ionicons
-                  name="cloud-upload-outline"
-                  size={15}
-                  color={Colors.white}
-                />
-              )}
-              <Text style={styles.sheetsSyncNowText}>
-                {isSyncing ? 'Syncing...' : 'Push Unsynced'}
-              </Text>
+              <Text style={styles.sheetsShareBtnText}>Share / Export CSV</Text>
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* ── WheelOfNames.com External Raffle Helper Card ── */}
-        <TouchableOpacity
-          style={styles.wheelExternalCard}
-          onPress={handleOpenWheelOfNames}
-          activeOpacity={0.85}
-        >
-          <View style={styles.wheelExternalIcon}>
-            <Ionicons name="open-outline" size={22} color={Colors.white} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.wheelExternalTitle}>
-              Open wheelofnames.com
-            </Text>
-            <Text style={styles.wheelExternalSub}>
-              Import your Google Sheet directly on wheelofnames.com for the
-              official raffle draw
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={Colors.crimson} />
-        </TouchableOpacity>
 
         {/* ── Quick Check-In Overview (No Late Stat) ── */}
         <View style={styles.sectionHeaderRow}>
@@ -336,7 +339,7 @@ export default function DashboardScreen() {
             activeOpacity={0.7}
           >
             <Text style={styles.viewHistoryLink}>
-              View Participant List →
+              View All Participants →
             </Text>
           </TouchableOpacity>
         </View>
@@ -352,16 +355,6 @@ export default function DashboardScreen() {
             <Text style={styles.statLabel}>Checked In</Text>
           </View>
 
-          <View style={[styles.statBox, { borderColor: Colors.leafGreen }]}>
-            <Ionicons
-              name="cloud-done"
-              size={22}
-              color={Colors.leafGreen}
-            />
-            <Text style={styles.statValue}>{stats.synced}</Text>
-            <Text style={styles.statLabel}>In Google Sheet</Text>
-          </View>
-
           <View style={[styles.statBox, { borderColor: Colors.gold }]}>
             <Ionicons name="briefcase" size={22} color={Colors.gold} />
             <Text style={styles.statValue}>{stats.departments}</Text>
@@ -369,7 +362,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ── Scanner Operator / Default Department Card ── */}
+        {/* ── Default Department / Operator Card ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Scanner Operator / Department</Text>
           <TouchableOpacity
@@ -406,137 +399,12 @@ export default function DashboardScreen() {
               Checked-In Participants ({stats.checkedIn})
             </Text>
             <Text style={styles.historyBtnSubtitle}>
-              View scanned Names & Departments or copy for wheelofnames.com
+              View scanned Names & Departments
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={Colors.olive} />
         </TouchableOpacity>
       </ScrollView>
-
-      {/* ── Google Sheets Setup Modal ── */}
-      <Modal
-        visible={showSheetsModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSheetsModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <ScrollView
-            contentContainerStyle={styles.modalScrollWrapper}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.modalCard}>
-              <View style={styles.editModalHeader}>
-                <View style={styles.editAvatarMini}>
-                  <Ionicons name="logo-google" size={18} color={Colors.white} />
-                </View>
-                <Text style={styles.modalTitle}>Google Sheets Auto-Sync</Text>
-              </View>
-
-              <Text style={styles.modalSubtitleLeft}>
-                Every time you scan one of your 200+ participant QR codes, the
-                app immediately appends their Name and Department to your Google
-                Sheet.
-              </Text>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Google Apps Script Web App URL (Required for Auto-Write)
-                </Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={webhookUrlInput}
-                  onChangeText={setWebhookUrlInput}
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  placeholderTextColor={Colors.textMuted}
-                  autoCapitalize="none"
-                />
-                <Text style={styles.fieldHint}>
-                  Paste the Web App URL from your Google Sheet&apos;s Apps
-                  Script deployment.
-                </Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Google Sheet Link (Optional — for quick reference)
-                </Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={sheetUrlInput}
-                  onChangeText={setSheetUrlInput}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  placeholderTextColor={Colors.textMuted}
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <TouchableOpacity
-                style={styles.scriptToggleBtn}
-                onPress={() => setShowScriptCode(!showScriptCode)}
-              >
-                <Ionicons
-                  name="code-slash-outline"
-                  size={15}
-                  color={Colors.leafGreen}
-                />
-                <Text style={styles.scriptToggleText}>
-                  {showScriptCode
-                    ? 'Hide Google Apps Script Code'
-                    : 'Show Google Apps Script to Paste in Your Sheet'}
-                </Text>
-              </TouchableOpacity>
-
-              {showScriptCode && (
-                <View style={styles.scriptCodeBox}>
-                  <Text style={styles.scriptCodeHint}>
-                    In your Google Sheet, click Extensions → Apps Script, paste
-                    this code, and click Deploy → New deployment → Web app
-                    (Access: Anyone):
-                  </Text>
-                  <TextInput
-                    style={styles.scriptCodeInput}
-                    value={GOOGLE_APPS_SCRIPT_TEMPLATE}
-                    multiline
-                    editable={false}
-                    selectTextOnFocus
-                  />
-                </View>
-              )}
-
-              {syncNotice ? (
-                <View style={styles.syncFeedbackBox}>
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={16}
-                    color={Colors.leafGreen}
-                  />
-                  <Text style={styles.syncFeedbackText}>{syncNotice}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.modalButtonRow}>
-                <TouchableOpacity
-                  style={styles.modalCancelBtn}
-                  onPress={() => setShowSheetsModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>Close</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.modalSaveBtn}
-                  onPress={handleSaveAndSyncSheets}
-                  disabled={isSyncing}
-                >
-                  <Text style={styles.modalSaveText}>
-                    {isSyncing ? 'Syncing...' : 'Save & Sync'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
 
       {/* ── Edit Operator / Default Department Modal ── */}
       <Modal
@@ -567,7 +435,7 @@ export default function DashboardScreen() {
 
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>
-                Default Department (used if a QR code only contains a Name)
+                Default Department (used if a QR code only has a Name)
               </Text>
               <TextInput
                 style={styles.textInput}
@@ -732,8 +600,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Google Sheets Card
-  sheetsCard: {
+  copiedToast: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.lightGreen,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.leafGreen,
+  },
+  copiedToastText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+
+  // 1-Tap Easy Export Card
+  easyExportCard: {
     backgroundColor: Colors.white,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
@@ -742,110 +627,83 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     ...Shadow.card,
   },
-  sheetsCardTop: {
+  easyExportHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
   },
-  sheetsIconCircle: {
+  easyExportIconCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.lightGreen,
+    backgroundColor: Colors.crimsonLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sheetsStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetsCardTitle: {
+  easyExportTitle: {
     fontSize: FontSize.md,
     fontWeight: '700',
     color: Colors.textPrimary,
   },
-  statusDotPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
-  },
-  statusDotPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  sheetsCardSub: {
+  easyExportSub: {
     fontSize: FontSize.xs,
     color: Colors.olive,
     marginTop: 2,
-    lineHeight: 16,
   },
-  sheetsButtonRow: {
+  wheelPrimaryBtn: {
+    height: 48,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.crimson,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.lg,
+    ...Shadow.button,
+  },
+  wheelPrimaryBtnText: {
+    color: Colors.white,
+    fontSize: FontSize.xs,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  sheetsBtnRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
   },
-  sheetsConfigBtn: {
-    flex: 1.2,
-    height: 40,
+  sheetsCopyBtn: {
+    flex: 1,
+    height: 42,
     borderRadius: Radius.pill,
+    backgroundColor: Colors.lightGreen,
+    borderWidth: 1,
+    borderColor: Colors.leafGreen,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  sheetsCopyBtnText: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.darkGreen,
+  },
+  sheetsShareBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.creamWhite,
     borderWidth: 1.5,
     borderColor: Colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: Colors.creamWhite,
   },
-  sheetsConfigBtnText: {
+  sheetsShareBtnText: {
     fontSize: FontSize.xs,
     fontWeight: '700',
     color: Colors.darkGreen,
-  },
-  sheetsSyncNowBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.leafGreen,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  sheetsSyncNowText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-
-  // Wheel of Names External Card
-  wheelExternalCard: {
-    backgroundColor: Colors.crimsonLight,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    borderWidth: 1.5,
-    borderColor: Colors.crimson,
-  },
-  wheelExternalIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.crimson,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  wheelExternalTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: '800',
-    color: Colors.crimson,
-  },
-  wheelExternalSub: {
-    fontSize: 11,
-    color: Colors.textPrimary,
-    marginTop: 1,
-    lineHeight: 15,
   },
 
   // Section Header
@@ -946,12 +804,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.xl,
   },
-  modalScrollWrapper: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-  },
   modalCard: {
     backgroundColor: Colors.white,
     borderRadius: Radius.xl,
@@ -966,20 +818,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
   },
-  modalSubtitleLeft: {
-    fontSize: FontSize.xs,
-    color: Colors.olive,
-    lineHeight: 18,
-    marginBottom: Spacing.md,
-    marginTop: 4,
-    textAlign: 'left',
-    width: '100%',
-  },
   editModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    marginBottom: 8,
+    marginBottom: 12,
     alignSelf: 'flex-start',
   },
   editAvatarMini: {
@@ -1001,11 +844,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginLeft: 2,
   },
-  fieldHint: {
-    fontSize: 11,
-    color: Colors.olive,
-    lineHeight: 15,
-  },
   textInput: {
     backgroundColor: Colors.creamWhite,
     borderRadius: Radius.md,
@@ -1015,56 +853,6 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     borderWidth: 1,
     borderColor: Colors.border,
-  },
-  scriptToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
-  },
-  scriptToggleText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.leafGreen,
-  },
-  scriptCodeBox: {
-    width: '100%',
-    backgroundColor: Colors.beige,
-    padding: Spacing.sm,
-    borderRadius: Radius.md,
-    marginBottom: Spacing.sm,
-    gap: 4,
-  },
-  scriptCodeHint: {
-    fontSize: 11,
-    color: Colors.textPrimary,
-    fontWeight: '600',
-  },
-  scriptCodeInput: {
-    fontSize: 10,
-    fontFamily: 'monospace',
-    color: Colors.textPrimary,
-    maxHeight: 120,
-    backgroundColor: Colors.white,
-    padding: 6,
-    borderRadius: 6,
-  },
-  syncFeedbackBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    width: '100%',
-    backgroundColor: Colors.lightGreen,
-    padding: Spacing.sm,
-    borderRadius: Radius.sm,
-    marginBottom: Spacing.xs,
-  },
-  syncFeedbackText: {
-    flex: 1,
-    fontSize: FontSize.xs,
-    color: Colors.textPrimary,
-    fontWeight: '600',
   },
   chipRow: {
     flexDirection: 'row',

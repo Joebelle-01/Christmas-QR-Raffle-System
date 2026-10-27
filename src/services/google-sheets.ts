@@ -1,58 +1,28 @@
 // ============================================================
 // Work Christmas Party – Smart QR Check-In Scanner
-// Service: Google Sheets Live Check-In Sync
-// Every scanned QR code appends [Timestamp, Name, Department, Status]
-// to Google Sheets so you can load the sheet directly in wheelofnames.com
+// Service: User-Friendly Google Sheets & Wheel of Names Export
+// Features:
+//   - Zero-setup 1-Tap Copy for Wheel of Names (wheelofnames.com)
+//   - Zero-setup 1-Tap Copy Table (TSV) & Share CSV for Google Sheets
+//   - Optional silent background sync if organizer sets a Sheet URL
 // ============================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 
 import { AttendanceRecord, GoogleSheetsConfig } from '@/types/attendance';
 
 const SHEETS_CONFIG_KEY = '@google_sheets_config_v2';
 
+// Optional pre-configured webhook URL (if set by the developer in .env)
+const ENV_WEBHOOK_URL = process.env.EXPO_PUBLIC_SHEET_WEBHOOK_URL || '';
+const ENV_SHEET_URL = process.env.EXPO_PUBLIC_GOOGLE_SHEET_URL || '';
+
 export const DEFAULT_SHEETS_CONFIG: GoogleSheetsConfig = {
-  sheetUrl: '',
-  webhookUrl: '',
+  sheetUrl: ENV_SHEET_URL,
+  webhookUrl: ENV_WEBHOOK_URL,
   autoSync: true,
 };
-
-/**
- * Ready-to-copy Google Apps Script for automatic Google Sheets check-in logging.
- * Paste into Extensions -> Apps Script -> Deploy as Web App ("Anyone").
- */
-export const GOOGLE_APPS_SCRIPT_TEMPLATE = `// Work Christmas Party QR Check-In -> Google Sheets
-// 1. In your Google Sheet: Extensions -> Apps Script
-// 2. Paste this code -> Click Deploy -> New deployment -> Web app
-// 3. Set "Who has access" to "Anyone" -> Copy Web App URL into the App!
-
-function doPost(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Participants') || ss.getSheets()[0];
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Timestamp', 'Participant Name', 'Department', 'Status']);
-  }
-  var body = JSON.parse(e.postData.contents || '{}');
-  var name = String(body.participantName || '').trim();
-  var department = String(body.department || 'General').trim();
-  var timestamp = (body.date && body.time) ? (body.date + ' ' + body.time) : new Date().toLocaleString();
-
-  // Prevent duplicate entries in the sheet for the same Name + Department
-  var data = sheet.getDataRange().getValues();
-  for (var i = 1; i < data.length; i++) {
-    if (
-      String(data[i][1]).toLowerCase() === name.toLowerCase() &&
-      String(data[i][2]).toLowerCase() === department.toLowerCase()
-    ) {
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, duplicate: true }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-
-  sheet.appendRow([timestamp, name, department, 'Checked In']);
-  return ContentService.createTextOutput(JSON.stringify({ ok: true }))
-    .setMimeType(ContentService.MimeType.JSON);
-}`;
 
 // ── Storage Helpers ─────────────────────────────────────────
 
@@ -60,9 +30,12 @@ export async function getSheetsConfig(): Promise<GoogleSheetsConfig> {
   try {
     const raw = await AsyncStorage.getItem(SHEETS_CONFIG_KEY);
     if (!raw) return DEFAULT_SHEETS_CONFIG;
+    const saved = JSON.parse(raw) as Partial<GoogleSheetsConfig>;
     return {
       ...DEFAULT_SHEETS_CONFIG,
-      ...(JSON.parse(raw) as Partial<GoogleSheetsConfig>),
+      ...saved,
+      webhookUrl: saved.webhookUrl || ENV_WEBHOOK_URL,
+      sheetUrl: saved.sheetUrl || ENV_SHEET_URL,
     };
   } catch (error) {
     console.error('[GoogleSheets] Failed to load config:', error);
@@ -79,8 +52,6 @@ export async function saveSheetsConfig(
   return updated;
 }
 
-// ── URL Validation ──────────────────────────────────────────
-
 function isValidHttpsUrl(rawUrl: string): boolean {
   try {
     const parsed = new URL(rawUrl.trim());
@@ -90,11 +61,9 @@ function isValidHttpsUrl(rawUrl: string): boolean {
   }
 }
 
-// ── Live Check-In POST to Google Sheets ─────────────────────
-
 /**
- * Sends a scanned participant's Name & Department to the Google Apps Script Web App URL.
- * Appends a row in Google Sheets immediately after QR scan.
+ * Silent background sync if a webhook URL is configured.
+ * Normal users never have to set this up — 1-tap copy/share works automatically!
  */
 export async function postCheckInToGoogleSheet(
   record: AttendanceRecord,
@@ -130,32 +99,68 @@ export async function postCheckInToGoogleSheet(
       return true;
     }
     return false;
-  } catch (error) {
+  } catch {
     clearTimeout(timeoutId);
-    console.warn('[GoogleSheets] Failed to post check-in (saved locally):', error);
     return false;
   }
 }
 
+// ── User-Friendly 1-Tap Formatters & Clipboard Helpers ──────
+
 /**
- * Exports all checked-in participants as a clean CSV string for Google Sheets.
+ * Formats checked-in participant names (one per line) ready to paste
+ * directly into https://wheelofnames.com/
+ */
+export function formatForWheelOfNames(records: AttendanceRecord[]): string {
+  return records
+    .map((r) =>
+      r.department
+        ? `${r.participantName} - ${r.department}`
+        : r.participantName
+    )
+    .join('\n');
+}
+
+/**
+ * Formats records as Tab-Separated Values (TSV).
+ * When pasted into Google Sheets or Excel (cell A1), it automatically
+ * splits into separate columns (Participant Name | Department | Time | Date)!
+ */
+export function formatRecordsAsTSV(records: AttendanceRecord[]): string {
+  const lines: string[] = [
+    ['Participant Name', 'Department', 'Time Checked In', 'Date'].join('\t'),
+  ];
+
+  records.forEach((r) => {
+    lines.push(
+      [r.participantName, r.department, r.time, r.date]
+        .map((val) => String(val || '').replace(/[\t\r\n]+/g, ' '))
+        .join('\t')
+    );
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * Exports all checked-in participants as a standard CSV string.
  */
 export function formatRecordsAsCSV(records: AttendanceRecord[]): string {
-  const escapeCsv = (val: string) => `"${String(val || '').replace(/"/g, '""')}"`;
+  const escapeCsv = (val: string) =>
+    `"${String(val || '').replace(/"/g, '""')}"`;
 
   const lines: string[] = [
-    'Date,Time,Participant Name,Department,Status,Synced To Google Sheet',
+    'Participant Name,Department,Time Checked In,Date,Status',
   ];
 
   records.forEach((r) => {
     lines.push(
       [
-        escapeCsv(r.date),
-        escapeCsv(r.time),
         escapeCsv(r.participantName),
         escapeCsv(r.department),
+        escapeCsv(r.time),
+        escapeCsv(r.date),
         escapeCsv('Checked In'),
-        escapeCsv(r.syncedToSheet ? 'Yes' : 'Local'),
       ].join(',')
     );
   });
@@ -164,15 +169,25 @@ export function formatRecordsAsCSV(records: AttendanceRecord[]): string {
 }
 
 /**
- * Formats checked-in participant names (one per line) so they can also be
- * pasted directly into https://wheelofnames.com/ at any time.
+ * 1-Tap: Copies all participant names to clipboard for wheelofnames.com
  */
-export function formatForWheelOfNames(records: AttendanceRecord[]): string {
-  return records
-    .map((r) =>
-      r.department
-        ? `${r.participantName} (${r.department})`
-        : r.participantName
-    )
-    .join('\n');
+export async function copyNamesToClipboard(
+  records: AttendanceRecord[]
+): Promise<boolean> {
+  const text = formatForWheelOfNames(records);
+  if (!text) return false;
+  await Clipboard.setStringAsync(text);
+  return true;
+}
+
+/**
+ * 1-Tap: Copies all rows in Google Sheets / Excel column format (TSV)
+ */
+export async function copyTableForSheets(
+  records: AttendanceRecord[]
+): Promise<boolean> {
+  const text = formatRecordsAsTSV(records);
+  if (!text) return false;
+  await Clipboard.setStringAsync(text);
+  return true;
 }

@@ -1,10 +1,10 @@
 // ============================================================
 // Work Christmas Party – Smart QR Check-In Scanner
-// Screen: Checked-In Participants & Export (history.tsx)
+// Screen: Checked-In Participants & 1-Tap Export (history.tsx)
 // Features:
 //   - Lists all checked-in participants (Name & Department)
-//   - Copy Names for wheelofnames.com or Export CSV for Google Sheets
-//   - Push any unsynced records to Google Sheets
+//   - 1-Tap Copy Names for wheelofnames.com
+//   - 1-Tap Copy Table for Google Sheets (splits into columns!)
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -14,12 +14,11 @@ import {
   Alert,
   FlatList,
   Linking,
-  Modal,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -29,7 +28,8 @@ import { AttendanceCard } from '@/components/AttendanceCard';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAttendance } from '@/context/attendance-context';
 import {
-  formatForWheelOfNames,
+  copyNamesToClipboard,
+  copyTableForSheets,
   formatRecordsAsCSV,
 } from '@/services/google-sheets';
 import { AttendanceRecord } from '@/types/attendance';
@@ -38,10 +38,8 @@ export default function HistoryScreen() {
   const { records, stats, clearRecords, addRecord } = useAttendance();
 
   const [selectedDept, setSelectedDept] = useState<string>('All');
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportMode, setExportMode] = useState<'wheel' | 'csv'>('wheel');
+  const [copiedNotice, setCopiedNotice] = useState('');
 
-  // Unique departments for filter chips
   const departmentFilters = useMemo(() => {
     const depts = Array.from(
       new Set(records.map((r) => r.department.trim()).filter(Boolean))
@@ -56,11 +54,50 @@ export default function HistoryScreen() {
     );
   }, [records, selectedDept]);
 
-  const exportText = useMemo(() => {
-    return exportMode === 'wheel'
-      ? formatForWheelOfNames(records)
-      : formatRecordsAsCSV(records);
-  }, [records, exportMode]);
+  function showCopiedToast(msg: string) {
+    setCopiedNotice(msg);
+    setTimeout(() => setCopiedNotice(''), 4000);
+  }
+
+  async function handleCopyAndOpenWheel() {
+    if (records.length === 0) {
+      Alert.alert('Empty List', 'Scan participant QR codes first.');
+      return;
+    }
+    await copyNamesToClipboard(records);
+    showCopiedToast(
+      `Copied ${records.length} names! Just press Paste on wheelofnames.com`
+    );
+    Linking.openURL('https://wheelofnames.com/').catch(() => {});
+  }
+
+  async function handleCopyForSheets() {
+    if (records.length === 0) {
+      Alert.alert('Empty List', 'Scan participant QR codes first.');
+      return;
+    }
+    await copyTableForSheets(records);
+    showCopiedToast(
+      `Copied ${records.length} rows! Open Google Sheets and press Paste (Ctrl+V)`
+    );
+  }
+
+  async function handleShareCSV() {
+    if (records.length === 0) {
+      Alert.alert('Empty List', 'Scan participant QR codes first.');
+      return;
+    }
+    const csv = formatRecordsAsCSV(records);
+    try {
+      await Share.share({
+        title: 'Christmas Party Check-In List',
+        message: csv,
+      });
+    } catch {
+      await copyTableForSheets(records);
+      showCopiedToast('Copied check-in table to clipboard!');
+    }
+  }
 
   function handleClearAll() {
     if (records.length === 0) {
@@ -70,7 +107,7 @@ export default function HistoryScreen() {
 
     Alert.alert(
       'Clear Check-In List',
-      'Are you sure you want to delete all local check-in records? This action cannot be undone.',
+      'Are you sure you want to delete all check-in records? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -132,18 +169,18 @@ export default function HistoryScreen() {
           <Text style={styles.headerTitle}>Checked-In List</Text>
           <Text style={styles.headerSubtitle}>
             {records.length}{' '}
-            {records.length === 1 ? 'Participant' : 'Participants'} Logged
+            {records.length === 1 ? 'Participant' : 'Participants'} Scanned
           </Text>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <TouchableOpacity
             style={styles.circleBtn}
-            onPress={() => setShowExportModal(true)}
+            onPress={handleShareCSV}
             activeOpacity={0.7}
           >
             <Ionicons
-              name="share-outline"
+              name="share-social-outline"
               size={20}
               color={Colors.leafGreen}
             />
@@ -159,20 +196,47 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      {/* ── Overview Summary Row (No Late Stat) ── */}
+      {/* ── 1-Tap Action Buttons (Wheel of Names & Google Sheets) ── */}
+      <View style={styles.quickActionRow}>
+        <TouchableOpacity
+          style={styles.wheelBtn}
+          onPress={handleCopyAndOpenWheel}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="copy-outline" size={15} color={Colors.white} />
+          <Text style={styles.wheelBtnText}>
+            Copy & Open wheelofnames.com
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.sheetsBtn}
+          onPress={handleCopyForSheets}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="logo-google" size={15} color={Colors.leafGreen} />
+          <Text style={styles.sheetsBtnText}>Copy for Sheets</Text>
+        </TouchableOpacity>
+      </View>
+
+      {copiedNotice ? (
+        <View style={styles.copiedBanner}>
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color={Colors.leafGreen}
+          />
+          <Text style={styles.copiedBannerText}>{copiedNotice}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Overview Summary Row ── */}
       <View style={styles.overviewCard}>
         <View style={styles.statCol}>
           <Text style={[styles.statNum, { color: Colors.present }]}>
             {stats.checkedIn}
           </Text>
           <Text style={styles.statLbl}>Checked In</Text>
-        </View>
-        <View style={styles.vertDivider} />
-        <View style={styles.statCol}>
-          <Text style={[styles.statNum, { color: Colors.leafGreen }]}>
-            {stats.synced}
-          </Text>
-          <Text style={styles.statLbl}>In Google Sheet</Text>
         </View>
         <View style={styles.vertDivider} />
         <View style={styles.statCol}>
@@ -219,10 +283,10 @@ export default function HistoryScreen() {
           <View style={styles.emptyIconCircle}>
             <Ionicons name="people-outline" size={48} color={Colors.olive} />
           </View>
-          <Text style={styles.emptyTitle}>No Participants Checked In Yet</Text>
+          <Text style={styles.emptyTitle}>No Participants Scanned Yet</Text>
           <Text style={styles.emptySubtitle}>
-            Scan employee QR codes to record their Name and Department and send
-            them to Google Sheets.
+            Scan employee QR codes to record their Name and Department, then tap
+            &quot;Copy & Open wheelofnames.com&quot; above!
           </Text>
 
           <TouchableOpacity
@@ -247,99 +311,6 @@ export default function HistoryScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      {/* ── Wheel of Names / CSV Export Modal ── */}
-      <Modal
-        visible={showExportModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowExportModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Export for Wheel of Names / Sheets
-              </Text>
-              <TouchableOpacity onPress={() => setShowExportModal(false)}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modeSwitchRow}>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  exportMode === 'wheel' && styles.modeBtnActive,
-                ]}
-                onPress={() => setExportMode('wheel')}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    exportMode === 'wheel' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  Wheel of Names List
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  exportMode === 'csv' && styles.modeBtnActive,
-                ]}
-                onPress={() => setExportMode('csv')}
-              >
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    exportMode === 'csv' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  Google Sheets CSV
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.modalHint}>
-              {exportMode === 'wheel'
-                ? 'Select & copy these names to paste directly into https://wheelofnames.com/ (or import directly from your synced Google Sheet):'
-                : 'Select & copy this CSV to paste into Google Sheets or Excel:'}
-            </Text>
-
-            <TextInput
-              style={styles.csvBox}
-              value={exportText || 'No participants checked in yet.'}
-              multiline
-              editable={false}
-              selectTextOnFocus
-            />
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity
-                style={styles.openWheelBtn}
-                onPress={() => Linking.openURL('https://wheelofnames.com/')}
-              >
-                <Ionicons
-                  name="open-outline"
-                  size={16}
-                  color={Colors.crimson}
-                />
-                <Text style={styles.openWheelBtnText}>
-                  Open wheelofnames.com
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.closeModalBtn}
-                onPress={() => setShowExportModal(false)}
-              >
-                <Text style={styles.closeModalBtnText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -378,6 +349,63 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.olive,
     marginTop: 2,
+  },
+  quickActionRow: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  wheelBtn: {
+    flex: 1.4,
+    height: 42,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.crimson,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    ...Shadow.button,
+  },
+  wheelBtnText: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sheetsBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.leafGreen,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  sheetsBtnText: {
+    color: Colors.darkGreen,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  copiedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: Spacing.xl,
+    marginTop: Spacing.sm,
+    backgroundColor: Colors.lightGreen,
+    padding: Spacing.sm,
+    borderRadius: Radius.md,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.leafGreen,
+  },
+  copiedBannerText: {
+    flex: 1,
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
   overviewCard: {
     marginHorizontal: Spacing.xl,
@@ -486,97 +514,5 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: FontSize.sm,
     fontWeight: '600',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  modalCard: {
-    width: '100%',
-    backgroundColor: Colors.white,
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    gap: Spacing.md,
-    ...Shadow.card,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modalTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  modeSwitchRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.beige,
-    borderRadius: Radius.pill,
-    padding: 4,
-  },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: Radius.pill,
-    alignItems: 'center',
-  },
-  modeBtnActive: {
-    backgroundColor: Colors.leafGreen,
-  },
-  modeBtnText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.olive,
-  },
-  modeBtnTextActive: {
-    color: Colors.white,
-  },
-  modalHint: {
-    fontSize: FontSize.xs,
-    color: Colors.olive,
-    lineHeight: 17,
-  },
-  csvBox: {
-    backgroundColor: Colors.beige,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    fontSize: 11,
-    fontFamily: 'monospace',
-    color: Colors.textPrimary,
-    maxHeight: 200,
-  },
-  openWheelBtn: {
-    flex: 1.3,
-    height: 46,
-    borderRadius: Radius.pill,
-    borderWidth: 1.5,
-    borderColor: Colors.crimson,
-    backgroundColor: Colors.crimsonLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  openWheelBtnText: {
-    color: Colors.crimson,
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-  },
-  closeModalBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.leafGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeModalBtnText: {
-    color: Colors.white,
-    fontSize: FontSize.sm,
-    fontWeight: '700',
   },
 });
