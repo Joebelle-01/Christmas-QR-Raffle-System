@@ -1,14 +1,13 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
-// Screen: Welcome Screen (index.tsx)
-// Design: Leaf Green (#4A7C59) + Warm Beige (#F5F0E8)
-// Fonts:  Poppins (title/buttons) + Nunito (labels)
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
+// Screen: Welcome Screen (index.tsx) — No Login Required
+// Design: Festive Pine Green, Crimson Red, Gold & Warm Beige
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
-import * as SplashScreen from 'expo-splash-screen';
 import { router } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect, useState } from 'react';
 import {
   Animated,
   StatusBar,
@@ -23,21 +22,29 @@ import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 
 SplashScreen.hideAsync();
 
-// ── Leaf decoration component ──────────────────────────────
-function LeafDecor({ style }: { style?: object }) {
+// ── Festive sparkle / leaf decoration component ─────────────
+function FestiveDecor({
+  icon,
+  color,
+  style,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  style?: object;
+}) {
   return (
     <View style={[styles.leafDecor, style]}>
-      <Ionicons name="leaf" size={28} color={Colors.darkGreen} />
+      <Ionicons name={icon} size={26} color={color} />
     </View>
   );
 }
 
 // ── QR Icon with animated scan line ───────────────────────
 function AnimatedQRIcon() {
-  const scanAnim = useRef(new Animated.Value(0)).current;
+  const [scanAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(scanAnim, {
           toValue: 1,
@@ -46,12 +53,14 @@ function AnimatedQRIcon() {
         }),
         Animated.timing(scanAnim, {
           toValue: 0,
-          duration: 0,
+          duration: 1800,
           useNativeDriver: true,
         }),
       ])
-    ).start();
-  }, []);
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scanAnim]);
 
   const scanLineTranslate = scanAnim.interpolate({
     inputRange: [0, 1],
@@ -68,19 +77,18 @@ function AnimatedQRIcon() {
 
       {/* QR grid dots */}
       <View style={styles.qrGrid}>
-        {/* Top row blocks */}
         <View style={styles.qrRow}>
           <View style={[styles.qrBlock, styles.qrBlockLg]} />
           <View style={styles.qrBlockSm} />
           <View style={[styles.qrBlock, styles.qrBlockLg]} />
         </View>
-        {/* Middle row */}
         <View style={styles.qrRow}>
           <View style={styles.qrBlockSm} />
-          <View style={[styles.qrBlockMd, { alignSelf: 'center' }]} />
+          <View style={styles.qrGiftBadge}>
+            <Ionicons name="gift" size={18} color={Colors.crimson} />
+          </View>
           <View style={styles.qrBlockSm} />
         </View>
-        {/* Bottom row */}
         <View style={styles.qrRow}>
           <View style={[styles.qrBlock, styles.qrBlockLg]} />
           <View style={styles.qrBlockSm} />
@@ -101,8 +109,8 @@ function AnimatedQRIcon() {
 
 // ── Main Welcome Screen ─────────────────────────────────────
 export default function WelcomeScreen() {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [slideAnim] = useState(() => new Animated.Value(40));
 
   useEffect(() => {
     Animated.parallel([
@@ -117,19 +125,42 @@ export default function WelcomeScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, slideAnim]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.leafGreen} />
+      <StatusBar barStyle="light-content" backgroundColor={Colors.darkGreen} />
 
-      {/* ── Hero Card (Green Top Section) ── */}
+      {/* ── Hero Card (Festive Green Top Section) ── */}
       <View style={styles.heroCard}>
-        <LeafDecor style={styles.leafTopLeft} />
-        <LeafDecor style={[styles.leafTopLeft, styles.leafTopRight]} />
+        <FestiveDecor
+          icon="sparkles"
+          color={Colors.goldBright}
+          style={styles.leafTopLeft}
+        />
+        <FestiveDecor
+          icon="gift-outline"
+          color={Colors.white}
+          style={[styles.leafTopLeft, styles.leafTopRight]}
+        />
+
+        <View style={styles.seasonPill}>
+          <Ionicons name="sparkles" size={14} color={Colors.goldBright} />
+          <Text style={styles.seasonPillText}>CHRISTMAS PARTY EDITION</Text>
+        </View>
+
         <AnimatedQRIcon />
-        <LeafDecor style={[styles.leafTopLeft, styles.leafBottomLeft]} />
-        <LeafDecor style={[styles.leafTopLeft, styles.leafBottomRight]} />
+
+        <FestiveDecor
+          icon="leaf"
+          color={Colors.white}
+          style={[styles.leafTopLeft, styles.leafBottomLeft]}
+        />
+        <FestiveDecor
+          icon="star"
+          color={Colors.goldBright}
+          style={[styles.leafTopLeft, styles.leafBottomRight]}
+        />
       </View>
 
       {/* ── Content Section ── */}
@@ -141,25 +172,44 @@ export default function WelcomeScreen() {
       >
         {/* Title */}
         <View style={styles.titleSection}>
-          <Text style={styles.title}>Smart QR{'\n'}Attendance</Text>
-          <Text style={styles.tagline}>Scan. Track. Attend.</Text>
+          <Text style={styles.title}>Smart QR Check-In{'\n'}& Raffle System</Text>
+          <Text style={styles.tagline}>
+            Scan Guest QR  ·  Sync Google Sheets  ·  Spin the Wheel
+          </Text>
         </View>
 
-        {/* Group Badge */}
-        <View style={styles.badge}>
-          <Ionicons name="people" size={16} color={Colors.leafGreen} />
-          <Text style={styles.badgeText}>Group 5  ·  CS101</Text>
+        {/* Feature Badges */}
+        <View style={styles.badgeRow}>
+          <View style={styles.badge}>
+            <Ionicons name="logo-google" size={14} color={Colors.leafGreen} />
+            <Text style={styles.badgeText}>Google Sheets Sync</Text>
+          </View>
+          <View style={[styles.badge, { borderColor: Colors.crimson }]}>
+            <Ionicons name="gift" size={14} color={Colors.crimson} />
+            <Text style={[styles.badgeText, { color: Colors.crimson }]}>
+              Live Raffle Roulette
+            </Text>
+          </View>
         </View>
 
-        {/* Buttons */}
+        {/* Buttons (No Login Required!) */}
         <View style={styles.buttonGroup}>
           <TouchableOpacity
             style={styles.btnPrimary}
-            onPress={() => router.push('/login')}
+            onPress={() => router.push('/dashboard')}
             activeOpacity={0.85}
           >
             <Ionicons name="scan-outline" size={20} color={Colors.white} />
-            <Text style={styles.btnPrimaryText}>Get Started</Text>
+            <Text style={styles.btnPrimaryText}>Enter Event Dashboard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.btnSecondary}
+            onPress={() => router.push('/roulette')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="gift-outline" size={20} color={Colors.crimson} />
+            <Text style={styles.btnSecondaryText}>Open Christmas Raffle Wheel</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -176,28 +226,51 @@ const styles = StyleSheet.create({
 
   // Hero Card
   heroCard: {
-    backgroundColor: Colors.leafGreen,
+    backgroundColor: Colors.darkGreen,
     borderBottomLeftRadius: Radius.xl,
     borderBottomRightRadius: Radius.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.xxxl,
-    flex: 0.48,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xxl,
+    flex: 0.46,
+    gap: Spacing.md,
+  },
+  seasonPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 5,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.45)',
+  },
+  seasonPillText: {
+    color: Colors.goldLight,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   leafDecor: {
     position: 'absolute',
-    opacity: 0.35,
+    opacity: 0.45,
   },
   leafTopLeft: { top: Spacing.md, left: Spacing.lg },
   leafTopRight: { left: undefined, right: Spacing.lg },
   leafBottomLeft: { top: undefined, bottom: Spacing.md },
-  leafBottomRight: { top: undefined, left: undefined, bottom: Spacing.md, right: Spacing.lg },
+  leafBottomRight: {
+    top: undefined,
+    left: undefined,
+    bottom: Spacing.md,
+    right: Spacing.lg,
+  },
 
   // QR Icon
   qrWrapper: {
-    width: 160,
-    height: 160,
+    width: 156,
+    height: 156,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -206,7 +279,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 24,
     height: 24,
-    borderColor: Colors.white,
+    borderColor: Colors.goldBright,
     borderWidth: 3,
   },
   cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
@@ -222,17 +295,35 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     alignItems: 'center',
   },
-  qrBlock: { backgroundColor: Colors.white, borderRadius: 2 },
-  qrBlockLg: { width: 36, height: 36 },
-  qrBlockMd: { width: 20, height: 20, backgroundColor: Colors.white, borderRadius: 2 },
-  qrBlockSm: { width: 10, height: 10, backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 2 },
+  qrBlock: { backgroundColor: Colors.white, borderRadius: 4 },
+  qrBlockLg: { width: 34, height: 34 },
+  qrBlockMd: {
+    width: 22,
+    height: 22,
+    backgroundColor: Colors.white,
+    borderRadius: 4,
+  },
+  qrBlockSm: {
+    width: 10,
+    height: 10,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderRadius: 2,
+  },
+  qrGiftBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: Colors.goldLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scanLine: {
     position: 'absolute',
-    width: '80%',
-    height: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    width: '82%',
+    height: 3,
+    backgroundColor: Colors.goldBright,
     borderRadius: 2,
-    shadowColor: Colors.white,
+    shadowColor: Colors.goldBright,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 6,
@@ -241,47 +332,55 @@ const styles = StyleSheet.create({
 
   // Content
   content: {
-    flex: 0.52,
+    flex: 0.54,
     paddingHorizontal: Spacing.xl,
-    paddingTop: Spacing.xl,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'space-evenly',
   },
   titleSection: {
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   title: {
-    fontSize: FontSize.hero,
+    fontSize: FontSize.xxl,
     fontWeight: '700',
     color: Colors.textPrimary,
     textAlign: 'center',
-    lineHeight: 40,
+    lineHeight: 36,
     letterSpacing: -0.5,
   },
   tagline: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.sm,
     color: Colors.olive,
     textAlign: 'center',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    fontWeight: '500',
   },
 
-  // Badge
+  // Badges
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: 6,
     backgroundColor: Colors.white,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
     borderRadius: Radius.pill,
     borderWidth: 1,
     borderColor: Colors.border,
     ...Shadow.card,
   },
   badgeText: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
+    fontSize: FontSize.xs,
+    fontWeight: '700',
     color: Colors.textPrimary,
     letterSpacing: 0.2,
   },
@@ -293,7 +392,7 @@ const styles = StyleSheet.create({
   },
   btnPrimary: {
     backgroundColor: Colors.leafGreen,
-    height: 56,
+    height: 54,
     borderRadius: Radius.pill,
     flexDirection: 'row',
     alignItems: 'center',
@@ -304,24 +403,24 @@ const styles = StyleSheet.create({
   btnPrimaryText: {
     color: Colors.white,
     fontSize: FontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
   btnSecondary: {
-    height: 56,
+    height: 52,
     borderRadius: Radius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
     borderWidth: 1.5,
-    borderColor: Colors.darkGreen,
-    backgroundColor: Colors.beige,
+    borderColor: Colors.crimson,
+    backgroundColor: Colors.crimsonLight,
   },
   btnSecondaryText: {
-    color: Colors.darkGreen,
+    color: Colors.crimson,
     fontSize: FontSize.md,
-    fontWeight: '500',
-    letterSpacing: 0.3,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

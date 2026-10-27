@@ -1,9 +1,7 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
-// Screen: Attendance History (history.tsx)
-// Design: Leaf Green (#4A7C59) + Warm Beige (#F5F0E8)
-// Role: ZINOEL — History & Data Developer
-// Features: List records, Filter by status, Real-time state & AsyncStorage
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
+// Screen: Attendance History & CSV Export (history.tsx)
+// Features: List records, Filter by status, CSV Export for Google Sheets
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -12,9 +10,11 @@ import React, { useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  Modal,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,26 +24,31 @@ import { AttendanceCard } from '@/components/AttendanceCard';
 import { StatusMessage } from '@/components/StatusMessage';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 import { useAttendance } from '@/context/attendance-context';
+import { formatRecordsAsCSV } from '@/services/google-sheets';
 import { AttendanceRecord, AttendanceStatus } from '@/types/attendance';
 
 type FilterType = 'all' | AttendanceStatus;
 
 export default function HistoryScreen() {
-  const { records, stats, isLoading, clearRecords, addRecord } = useAttendance();
+  const { records, winners, stats, clearRecords, addRecord } = useAttendance();
   const { studentName, studentId } = useLocalSearchParams<{
     studentName?: string;
     studentId?: string;
   }>();
 
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [showCsvModal, setShowCsvModal] = useState(false);
 
-  // Filter records based on selected chip
   const filteredRecords = useMemo(() => {
     if (activeFilter === 'all') return records;
     return records.filter((item) => item.status === activeFilter);
   }, [records, activeFilter]);
 
-  // Handle clearing all records with confirmation
+  const csvContent = useMemo(
+    () => formatRecordsAsCSV(records, winners),
+    [records, winners]
+  );
+
   function handleClearAll() {
     if (records.length === 0) {
       Alert.alert('Empty History', 'There are no attendance records to clear.');
@@ -61,7 +66,7 @@ export default function HistoryScreen() {
           onPress: async () => {
             try {
               await clearRecords();
-            } catch (err) {
+            } catch {
               Alert.alert('Error', 'Failed to clear records.');
             }
           },
@@ -70,17 +75,22 @@ export default function HistoryScreen() {
     );
   }
 
-  // Quick test generator to verify storage and context on-device
   function handleAddTestRecord() {
-    const sampleStatuses: AttendanceStatus[] = ['present', 'present', 'late', 'present'];
-    const randomStatus = sampleStatuses[Math.floor(Math.random() * sampleStatuses.length)];
-    
+    const sampleStatuses: AttendanceStatus[] = [
+      'present',
+      'present',
+      'late',
+      'present',
+    ];
+    const randomStatus =
+      sampleStatuses[Math.floor(Math.random() * sampleStatuses.length)];
+
     addRecord({
-      studentName: studentName || 'Juan Dela Cruz',
-      studentId: studentId || '2024-00123',
+      studentName: studentName || 'Joebelle Dumapias',
+      studentId: studentId || '2024305392',
       course: 'BS Information Technology',
       section: 'IT-3A',
-      subject: 'CS101',
+      subject: 'Christmas Party 2026',
       status: randomStatus,
     });
   }
@@ -92,8 +102,8 @@ export default function HistoryScreen() {
         studentId={item.studentId}
         course={item.course}
         section={item.section}
-        subject={item.subject || 'CS101'}
-        status={item.status as any}
+        subject={item.subject || 'Christmas Party 2026'}
+        status={item.status}
         timestamp={item.time}
         date={item.date}
       />
@@ -115,35 +125,55 @@ export default function HistoryScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerTitleBox}>
-          <Text style={styles.headerTitle}>Attendance History</Text>
+          <Text style={styles.headerTitle}>Check-In Logs</Text>
           <Text style={styles.headerSubtitle}>
-            {records.length} {records.length === 1 ? 'Record' : 'Records'} logged
+            {records.length} {records.length === 1 ? 'Participant' : 'Participants'} Checked In
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.circleBtn}
-          onPress={handleClearAll}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="trash-outline" size={20} color={Colors.absent} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.circleBtn}
+            onPress={() => setShowCsvModal(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="document-text-outline"
+              size={20}
+              color={Colors.leafGreen}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.circleBtn}
+            onPress={handleClearAll}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={20} color={Colors.absent} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Overview Summary Row ── */}
       <View style={styles.overviewCard}>
         <View style={styles.statCol}>
-          <Text style={[styles.statNum, { color: Colors.present }]}>{stats.present}</Text>
+          <Text style={[styles.statNum, { color: Colors.present }]}>
+            {stats.present}
+          </Text>
           <Text style={styles.statLbl}>Present</Text>
         </View>
         <View style={styles.vertDivider} />
         <View style={styles.statCol}>
-          <Text style={[styles.statNum, { color: Colors.late }]}>{stats.late}</Text>
+          <Text style={[styles.statNum, { color: Colors.late }]}>
+            {stats.late}
+          </Text>
           <Text style={styles.statLbl}>Late</Text>
         </View>
         <View style={styles.vertDivider} />
         <View style={styles.statCol}>
-          <Text style={[styles.statNum, { color: Colors.leafGreen }]}>{stats.rate}</Text>
+          <Text style={[styles.statNum, { color: Colors.leafGreen }]}>
+            {stats.rate}
+          </Text>
           <Text style={styles.statLbl}>Attended</Text>
         </View>
       </View>
@@ -157,7 +187,12 @@ export default function HistoryScreen() {
             onPress={() => setActiveFilter(f)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.chipText, activeFilter === f && styles.chipTextActive]}>
+            <Text
+              style={[
+                styles.chipText,
+                activeFilter === f && styles.chipTextActive,
+              ]}
+            >
               {f.charAt(0).toUpperCase() + f.slice(1)}
             </Text>
           </TouchableOpacity>
@@ -171,13 +206,17 @@ export default function HistoryScreen() {
             <StatusMessage status={activeFilter} />
           ) : (
             <View style={styles.emptyIconCircle}>
-              <Ionicons name="calendar-outline" size={48} color={Colors.olive} />
+              <Ionicons
+                name="calendar-outline"
+                size={48}
+                color={Colors.olive}
+              />
             </View>
           )}
           <Text style={styles.emptyTitle}>No Records Found</Text>
           <Text style={styles.emptySubtitle}>
             {activeFilter === 'all'
-              ? 'You have not marked any attendance yet. Scan a classroom QR code to log attendance.'
+              ? 'No guests checked in yet. Scan a participant QR code to log check-in and enter them into the Raffle Wheel.'
               : `No attendance entries found with status "${activeFilter}".`}
           </Text>
 
@@ -187,8 +226,12 @@ export default function HistoryScreen() {
               onPress={handleAddTestRecord}
               activeOpacity={0.8}
             >
-              <Ionicons name="add-circle-outline" size={18} color={Colors.white} />
-              <Text style={styles.testBtnText}>Simulate Attendance Log</Text>
+              <Ionicons
+                name="add-circle-outline"
+                size={18}
+                color={Colors.white}
+              />
+              <Text style={styles.testBtnText}>Simulate Check-In Log</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -201,6 +244,42 @@ export default function HistoryScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      {/* ── CSV Export Modal for Google Sheets ── */}
+      <Modal
+        visible={showCsvModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCsvModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Google Sheets CSV Export</Text>
+              <TouchableOpacity onPress={() => setShowCsvModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.modalHint}>
+              Select and copy the CSV below to paste directly into Google Sheets
+              or Excel:
+            </Text>
+            <TextInput
+              style={styles.csvBox}
+              value={csvContent}
+              multiline
+              editable={false}
+              selectTextOnFocus
+            />
+            <TouchableOpacity
+              style={styles.closeModalBtn}
+              onPress={() => setShowCsvModal(false)}
+            >
+              <Text style={styles.closeModalBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -219,8 +298,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   circleBtn: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     borderRadius: Radius.pill,
     backgroundColor: Colors.white,
     alignItems: 'center',
@@ -240,8 +319,6 @@ const styles = StyleSheet.create({
     color: Colors.olive,
     marginTop: 2,
   },
-
-  // Overview summary card
   overviewCard: {
     marginHorizontal: Spacing.xl,
     marginTop: Spacing.sm,
@@ -273,8 +350,6 @@ const styles = StyleSheet.create({
     height: '60%',
     backgroundColor: Colors.creamWhite,
   },
-
-  // Filter Bar
   filterBar: {
     flexDirection: 'row',
     paddingHorizontal: Spacing.xl,
@@ -302,83 +377,11 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: Colors.white,
   },
-
-  // List
   listContent: {
     paddingHorizontal: Spacing.xl,
     paddingBottom: Spacing.xxxl,
     gap: Spacing.md,
   },
-  card: {
-    backgroundColor: Colors.white,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadow.card,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  subjectContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  subjectIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.lightGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subjectTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  sectionText: {
-    fontSize: FontSize.xs,
-    color: Colors.olive,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
-  },
-  statusText: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  cardDivider: {
-    height: 1,
-    backgroundColor: Colors.creamWhite,
-    marginVertical: Spacing.md,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  metaText: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
-
-  // Empty State
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
@@ -422,5 +425,55 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: FontSize.sm,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: Colors.white,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    ...Shadow.card,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  modalHint: {
+    fontSize: FontSize.xs,
+    color: Colors.olive,
+  },
+  csvBox: {
+    backgroundColor: Colors.beige,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    fontSize: 11,
+    fontFamily: 'monospace',
+    color: Colors.textPrimary,
+    maxHeight: 220,
+  },
+  closeModalBtn: {
+    height: 46,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.leafGreen,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeModalBtnText: {
+    color: Colors.white,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
   },
 });

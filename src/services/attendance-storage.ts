@@ -1,16 +1,78 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
-// Service: Attendance AsyncStorage Layer
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
+// Service: Attendance & Raffle AsyncStorage Layer
 // ============================================================
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { AttendanceRecord, AttendanceStats } from '@/types/attendance';
+import {
+  AttendanceRecord,
+  AttendanceStats,
+  RaffleParticipant,
+  RaffleWinner,
+} from '@/types/attendance';
 
 const STORAGE_KEY = '@attendance_records';
+const RAFFLE_POOL_KEY = '@raffle_participants_pool';
+const RAFFLE_WINNERS_KEY = '@raffle_winners_list';
 
-// ── Default subject (matches the hardcoded "CS101" in dashboard) ──
-const DEFAULT_SUBJECT = 'CS101';
+// ── Default event / subject ──
+const DEFAULT_SUBJECT = 'Christmas Party 2026';
+
+/**
+ * Default festive participants so the Roulette Wheel works out-of-the-box
+ * and updates dynamically as QR codes are scanned or Google Sheets are synced.
+ */
+export const SAMPLE_CHRISTMAS_PARTICIPANTS: RaffleParticipant[] = [
+  {
+    id: 'default-1',
+    name: 'Joebelle Dumapias',
+    studentId: '2024305392',
+    department: 'BS Information Technology',
+    section: 'IT-3A',
+    source: 'qr',
+  },
+  {
+    id: 'default-2',
+    name: 'Janine Reyes',
+    studentId: '2024301104',
+    department: 'BS Information Technology',
+    section: 'IT-3A',
+    source: 'qr',
+  },
+  {
+    id: 'default-3',
+    name: 'Zinoel Santos',
+    studentId: '2024302218',
+    department: 'BS Computer Science',
+    section: 'CS-3A',
+    source: 'qr',
+  },
+  {
+    id: 'default-4',
+    name: 'Angela Mendoza',
+    studentId: '2024304491',
+    department: 'BS Information Systems',
+    section: 'IT-3B',
+    source: 'sheets',
+  },
+  {
+    id: 'default-5',
+    name: 'Marco Villanueva',
+    studentId: '2024305812',
+    department: 'BS Computer Engineering',
+    section: 'CS-3B',
+    source: 'sheets',
+  },
+  {
+    id: 'default-6',
+    name: 'Sofia Cruz',
+    studentId: '2024306190',
+    department: 'BS Information Technology',
+    section: 'IT-3A',
+    source: 'sheets',
+  },
+];
 
 /**
  * Fetch all saved attendance records from AsyncStorage.
@@ -28,12 +90,12 @@ export async function getAllRecords(): Promise<AttendanceRecord[]> {
 
 /**
  * Fetch attendance records for a specific student only.
- * Used by the History screen to show only the logged-in student's records.
  */
 export async function getRecordsByStudentId(
   studentId: string
 ): Promise<AttendanceRecord[]> {
   const all = await getAllRecords();
+  if (!studentId) return all;
   return all.filter((r) => r.studentId === studentId);
 }
 
@@ -53,6 +115,13 @@ export async function addRecord(record: AttendanceRecord): Promise<void> {
 }
 
 /**
+ * Update the entire attendance records list in AsyncStorage.
+ */
+export async function saveAllRecords(records: AttendanceRecord[]): Promise<void> {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+/**
  * Delete all attendance records from AsyncStorage.
  */
 export async function clearAllRecords(): Promise<void> {
@@ -66,8 +135,6 @@ export async function clearAllRecords(): Promise<void> {
 
 /**
  * Helper: builds a formatted AttendanceRecord from raw input.
- * Automatically fills id, timestamp, date, time, and subject.
- * Subject defaults to "CS101" matching the dashboard display.
  */
 export function createRecord(
   data: Omit<AttendanceRecord, 'id' | 'date' | 'time' | 'timestamp' | 'subject'> &
@@ -78,7 +145,7 @@ export function createRecord(
   return {
     ...rest,
     subject,
-    id: now.getTime().toString(),
+    id: `${now.getTime()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: now.getTime(),
     date: now.toISOString().split('T')[0], // "YYYY-MM-DD"
     time: now.toLocaleTimeString('en-US', {
@@ -91,8 +158,6 @@ export function createRecord(
 
 /**
  * Compute attendance statistics from a list of records.
- * Used to replace the hardcoded stats (18 Present, 2 Late, 90%)
- * in dashboard.tsx with real data.
  */
 export function computeStats(records: AttendanceRecord[]): AttendanceStats {
   const present = records.filter((r) => r.status === 'present').length;
@@ -100,9 +165,45 @@ export function computeStats(records: AttendanceRecord[]): AttendanceStats {
   const absent = records.filter((r) => r.status === 'absent').length;
   const total = records.length;
 
-  // Count both present and late as attended for rate calculation
   const attended = present + late;
   const rate = total > 0 ? Math.round((attended / total) * 100) + '%' : '0%';
 
   return { present, late, absent, total, rate };
+}
+
+// ── Raffle Participant Pool & Winners Storage ───────────────
+
+export async function getRafflePool(): Promise<RaffleParticipant[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RAFFLE_POOL_KEY);
+    if (!raw) {
+      await AsyncStorage.setItem(
+        RAFFLE_POOL_KEY,
+        JSON.stringify(SAMPLE_CHRISTMAS_PARTICIPANTS)
+      );
+      return SAMPLE_CHRISTMAS_PARTICIPANTS;
+    }
+    return JSON.parse(raw) as RaffleParticipant[];
+  } catch (error) {
+    console.error('[AttendanceStorage] Failed to load raffle pool:', error);
+    return SAMPLE_CHRISTMAS_PARTICIPANTS;
+  }
+}
+
+export async function saveRafflePool(pool: RaffleParticipant[]): Promise<void> {
+  await AsyncStorage.setItem(RAFFLE_POOL_KEY, JSON.stringify(pool));
+}
+
+export async function getRaffleWinners(): Promise<RaffleWinner[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RAFFLE_WINNERS_KEY);
+    return raw ? (JSON.parse(raw) as RaffleWinner[]) : [];
+  } catch (error) {
+    console.error('[AttendanceStorage] Failed to load raffle winners:', error);
+    return [];
+  }
+}
+
+export async function saveRaffleWinners(winners: RaffleWinner[]): Promise<void> {
+  await AsyncStorage.setItem(RAFFLE_WINNERS_KEY, JSON.stringify(winners));
 }

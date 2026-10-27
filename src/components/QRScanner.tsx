@@ -6,8 +6,12 @@
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
-import { BarcodeScanningResult, CameraView, useCameraPermissions } from 'expo-camera';
-import React, { useEffect, useRef } from 'react';
+import {
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
+} from 'expo-camera';
+import React, { useEffect, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -29,7 +33,7 @@ interface QRScannerProps {
 // ── Component ───────────────────────────────────────────────
 export function QRScanner({ onScanned, active }: QRScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
-  const scanLineAnim = useRef(new Animated.Value(0)).current;
+  const [scanLineAnim] = useState(() => new Animated.Value(0));
 
   // Animate the scan line up and down while active
   useEffect(() => {
@@ -71,7 +75,8 @@ export function QRScanner({ onScanned, active }: QRScannerProps) {
 
         <Text style={styles.permissionTitle}>Camera Access Needed</Text>
         <Text style={styles.permissionSubtitle}>
-          Smart QR Attendance needs camera access to scan QR codes and mark your attendance.
+          Smart QR Attendance needs camera access to scan QR codes and mark your
+          attendance.
         </Text>
 
         <TouchableOpacity
@@ -79,7 +84,11 @@ export function QRScanner({ onScanned, active }: QRScannerProps) {
           onPress={requestPermission}
           activeOpacity={0.85}
         >
-          <Ionicons name="checkmark-circle-outline" size={18} color={Colors.white} />
+          <Ionicons
+            name="checkmark-circle-outline"
+            size={18}
+            color={Colors.white}
+          />
           <Text style={styles.grantButtonText}>Allow Camera Access</Text>
         </TouchableOpacity>
       </View>

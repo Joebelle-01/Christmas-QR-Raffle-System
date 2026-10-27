@@ -1,38 +1,60 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
-// Design System: Leaf Green + Warm Beige | Poppins + Nunito
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
+// Design System: Festive Pine Green, Crimson Red, Gold & Warm Beige
 // ============================================================
 
+import { Platform } from 'react-native';
+
 export const Colors = {
-  // Primary Palette
-  leafGreen: '#4A7C59',
-  darkGreen: '#2D5A3D',
-  midGreen: '#3D6B4A',
+  // Primary Palette (Pine & Leaf Green)
+  leafGreen: '#2E6F40',
+  darkGreen: '#1E4D2B',
+  midGreen: '#255D36',
   lightGreen: '#E8F5E9',
-  olive: '#6B7B5E',
+  olive: '#5A6B53',
+
+  // Festive Christmas Accents
+  crimson: '#C62828',
+  crimsonDark: '#8E0000',
+  crimsonLight: '#FFEBEE',
+  gold: '#D97706',
+  goldBright: '#F59E0B',
+  goldLight: '#FEF3C7',
 
   // Background
-  beige: '#F5F0E8',
-  creamWhite: '#FAFAF5',
+  beige: '#FAF7F2',
+  creamWhite: '#FFFDF9',
   white: '#FFFFFF',
 
   // Text
-  textPrimary: '#2D5A3D',
-  textSecondary: '#6B7B5E',
-  textMuted: '#9BA89A',
+  textPrimary: '#1E4D2B',
+  textSecondary: '#5A6B53',
+  textMuted: '#8FA18E',
 
   // Status Colors
-  present: '#4A7C59',
+  present: '#2E6F40',
   presentBg: '#E8F5E9',
-  late: '#F57F17',
-  lateBg: '#FFF8E1',
+  late: '#D97706',
+  lateBg: '#FEF3C7',
   absent: '#C62828',
   absentBg: '#FFEBEE',
 
+  // Roulette Wheel Slice Palette (Festive Christmas Alternating Colors)
+  wheelSlices: [
+    '#C62828', // Festive Crimson
+    '#1E4D2B', // Deep Pine Green
+    '#D97706', // Holiday Gold
+    '#2E6F40', // Emerald Green
+    '#991B1B', // Berry Red
+    '#0F766E', // Winter Teal
+    '#B45309', // Warm Amber
+    '#3730A3', // Starlight Indigo
+  ],
+
   // UI
   shadow: 'rgba(0,0,0,0.08)',
-  border: 'rgba(74,124,89,0.3)',
-  overlay: 'rgba(0,0,0,0.4)',
+  border: 'rgba(46,111,64,0.25)',
+  overlay: 'rgba(0,0,0,0.45)',
 } as const;
 
 export const FontSize = {
@@ -73,8 +95,6 @@ export const Spacing = {
 } as const;
 
 // ── Backwards-compatible exports (used by existing template components) ──────
-import { Platform } from 'react-native';
-
 export const Fonts = Platform.select({
   ios: { sans: 'system-ui', serif: 'ui-serif', rounded: 'ui-rounded', mono: 'ui-monospace' },
   default: { sans: 'normal', serif: 'serif', rounded: 'normal', mono: 'monospace' },

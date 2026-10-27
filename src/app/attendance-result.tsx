@@ -1,8 +1,8 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
 // Screen: Attendance Result Screen (attendance-result.tsx)
-// JANINE – Attendance Result Developer
-// Shows: Status, Student Info Card, Done button
+// Shows: Status, Raffle Entry Confirmation, Participant Card,
+//        Scan Next Guest / Open Raffle Wheel / Back to Dashboard
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -22,13 +22,17 @@ import { AttendanceCard } from '@/components/AttendanceCard';
 import { AttendanceStatus, StatusMessage } from '@/components/StatusMessage';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
 
-// ── Business Validation Logic ───────────────────────────────
 function validateStatus(raw: string | string[] | undefined): AttendanceStatus {
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value === 'present' || value === 'late' || value === 'absent' || value === 'invalid') {
+  if (
+    value === 'present' ||
+    value === 'late' ||
+    value === 'absent' ||
+    value === 'invalid'
+  ) {
     return value;
   }
-  return 'invalid'; // Default: unrecognised QR = invalid
+  return 'invalid';
 }
 
 function formatTime(date: Date): string {
@@ -47,7 +51,6 @@ function formatDate(date: Date): string {
   });
 }
 
-// ── Background tint per status ─────────────────────────────
 const STATUS_BG: Record<AttendanceStatus, string> = {
   present: '#F0FAF3',
   late: '#FFFBEB',
@@ -55,7 +58,6 @@ const STATUS_BG: Record<AttendanceStatus, string> = {
   invalid: Colors.beige,
 };
 
-// ── Main Screen ─────────────────────────────────────────────
 export default function AttendanceResultScreen() {
   const params = useLocalSearchParams<{
     studentName?: string;
@@ -69,10 +71,8 @@ export default function AttendanceResultScreen() {
     date?: string;
   }>();
 
-  // Validate the status from params
   const status = useMemo(() => validateStatus(params.status), [params.status]);
 
-  // Capture the timestamp at mount (moment of scan result)
   const scannedAt = useMemo(() => new Date(), []);
   const defaultTime = formatTime(scannedAt);
   const defaultDate = formatDate(scannedAt);
@@ -81,6 +81,7 @@ export default function AttendanceResultScreen() {
   const date = params.date || defaultDate;
 
   const bgColor = STATUS_BG[status];
+  const isRaffleEligible = status === 'present' || status === 'late';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: bgColor }]}>
@@ -93,52 +94,106 @@ export default function AttendanceResultScreen() {
         {/* Back Button */}
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/dashboard')}
           activeOpacity={0.7}
         >
           <Ionicons name="arrow-back" size={22} color={Colors.darkGreen} />
         </TouchableOpacity>
 
         {/* Page Title */}
-        <Text style={styles.pageTitle}>Attendance Result</Text>
+        <Text style={styles.pageTitle}>Check-In Result</Text>
 
         {/* Status Message — animated icon + text */}
         <StatusMessage status={status} />
 
-        {/* Attendance Card — student info + subject + time + date */}
+        {/* Raffle Entry Confirmed Banner */}
+        {isRaffleEligible && (
+          <View style={styles.raffleTicketBanner}>
+            <View style={styles.raffleTicketIcon}>
+              <Ionicons name="gift" size={22} color={Colors.crimson} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.raffleTicketTitle}>
+                Raffle Entry Confirmed!
+              </Text>
+              <Text style={styles.raffleTicketSub}>
+                Added to the Christmas Roulette Wheel & synced with Google
+                Sheets
+              </Text>
+            </View>
+            <Ionicons name="sparkles" size={18} color={Colors.goldBright} />
+          </View>
+        )}
+
+        {/* Attendance Card — participant info + event + time + date */}
         <AttendanceCard
-          studentName={params.studentName || 'Juan Dela Cruz'}
-          studentId={params.studentId || '2024-00123'}
+          studentName={params.studentName || 'Joebelle Dumapias'}
+          studentId={params.studentId || '2024305392'}
           course={params.course || 'BS Information Technology'}
           section={params.section || 'IT-3A'}
-          subject={params.subject || 'CS101'}
+          subject={params.subject || 'Christmas Party 2026'}
           status={status}
           timestamp={timestamp}
           date={date}
         />
 
-        {/* Done Button */}
-        <TouchableOpacity
-          style={styles.doneBtn}
-          onPress={() =>
-            router.replace({
-              pathname: '/dashboard',
-              params: {
-                studentName: params.studentName,
-                studentId: params.studentId,
-                course: params.course,
-                section: params.section,
-              },
-            })
-          }
-          activeOpacity={0.85}
-        >
-          <Ionicons name="home-outline" size={20} color={Colors.white} />
-          <Text style={styles.doneBtnText}>Back to Dashboard</Text>
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        <View style={styles.actionGroup}>
+          <TouchableOpacity
+            style={styles.scanAgainBtn}
+            onPress={() =>
+              router.replace({
+                pathname: '/scanner',
+                params: {
+                  studentName: params.studentName,
+                  studentId: params.studentId,
+                  course: params.course,
+                  section: params.section,
+                },
+              })
+            }
+            activeOpacity={0.85}
+          >
+            <Ionicons name="scan-outline" size={20} color={Colors.white} />
+            <Text style={styles.scanAgainBtnText}>Scan Next Participant</Text>
+          </TouchableOpacity>
 
-        {/* Footer */}
-        <Text style={styles.footer}>Group 5  ·  Smart QR Attendance System</Text>
+          {isRaffleEligible && (
+            <TouchableOpacity
+              style={styles.rouletteBtn}
+              onPress={() => router.replace('/roulette')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="gift-outline" size={20} color={Colors.crimson} />
+              <Text style={styles.rouletteBtnText}>
+                Go to Christmas Raffle Wheel
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={styles.doneBtn}
+            onPress={() =>
+              router.replace({
+                pathname: '/dashboard',
+                params: {
+                  studentName: params.studentName,
+                  studentId: params.studentId,
+                  course: params.course,
+                  section: params.section,
+                },
+              })
+            }
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name="home-outline"
+              size={18}
+              color={Colors.darkGreen}
+            />
+            <Text style={styles.doneBtnText}>Back to Dashboard</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -153,8 +208,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.xxxl,
   },
-
-  // Back button
   backBtn: {
     width: 40,
     height: 40,
@@ -165,41 +218,91 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     ...Shadow.card,
   },
-
-  // Title
   pageTitle: {
     fontSize: FontSize.xxl,
     fontWeight: '700',
     color: Colors.textPrimary,
     letterSpacing: -0.3,
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
-
-  // Done button
-  doneBtn: {
+  raffleTicketBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.goldLight,
+    borderWidth: 1.5,
+    borderColor: Colors.goldBright,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  raffleTicketIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  raffleTicketTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '800',
+    color: Colors.crimson,
+  },
+  raffleTicketSub: {
+    fontSize: 11,
+    color: Colors.textPrimary,
+    marginTop: 1,
+  },
+  actionGroup: {
+    marginTop: Spacing.xl,
+    gap: Spacing.md,
+  },
+  scanAgainBtn: {
     backgroundColor: Colors.leafGreen,
-    height: 56,
+    height: 54,
     borderRadius: Radius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    marginTop: Spacing.xl,
     ...Shadow.button,
   },
-  doneBtnText: {
+  scanAgainBtnText: {
     color: Colors.white,
     fontSize: FontSize.md,
-    fontWeight: '600',
-    letterSpacing: 0.3,
+    fontWeight: '700',
   },
-
-  // Footer
-  footer: {
-    textAlign: 'center',
-    marginTop: Spacing.xl,
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    letterSpacing: 0.5,
+  rouletteBtn: {
+    backgroundColor: Colors.crimsonLight,
+    height: 50,
+    borderRadius: Radius.pill,
+    borderWidth: 1.5,
+    borderColor: Colors.crimson,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  rouletteBtnText: {
+    color: Colors.crimson,
+    fontSize: FontSize.md,
+    fontWeight: '700',
+  },
+  doneBtn: {
+    height: 48,
+    borderRadius: Radius.pill,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+  },
+  doneBtnText: {
+    color: Colors.darkGreen,
+    fontSize: FontSize.sm,
+    fontWeight: '700',
   },
 });

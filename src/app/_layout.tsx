@@ -10,10 +10,10 @@ export default function RootLayout() {
     <AttendanceProvider>
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
-        <Stack.Screen name="login" />
         <Stack.Screen name="dashboard" />
         <Stack.Screen name="scanner" />
         <Stack.Screen name="attendance-result" />
+        <Stack.Screen name="roulette" />
         <Stack.Screen name="history" />
       </Stack>
     </AttendanceProvider>

@@ -5,7 +5,7 @@
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, FontSize, Radius, Spacing } from '@/constants/theme';
@@ -14,7 +14,13 @@ export type AttendanceStatus = 'present' | 'late' | 'absent' | 'invalid';
 
 const STATUS_CONFIG: Record<
   AttendanceStatus,
-  { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string; label: string; sub: string }
+  {
+    icon: keyof typeof Ionicons.glyphMap;
+    color: string;
+    bg: string;
+    label: string;
+    sub: string;
+  }
 > = {
   present: {
     icon: 'checkmark-circle',
@@ -51,8 +57,8 @@ type Props = {
 };
 
 export function StatusMessage({ status }: Props) {
-  const scaleAnim = useRef(new Animated.Value(0.4)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(0.4));
+  const [fadeAnim] = useState(() => new Animated.Value(0));
 
   const config = STATUS_CONFIG[status] || STATUS_CONFIG.invalid;
 
@@ -70,11 +76,14 @@ export function StatusMessage({ status }: Props) {
         useNativeDriver: true,
       }),
     ]).start();
-  }, []);
+  }, [fadeAnim, scaleAnim]);
 
   return (
     <Animated.View
-      style={[styles.container, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
+      style={[
+        styles.container,
+        { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
+      ]}
     >
       {/* Icon Badge */}
       <View style={[styles.iconBadge, { backgroundColor: config.bg }]}>

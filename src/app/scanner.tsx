@@ -1,10 +1,12 @@
 // ============================================================
-// GROUP 5 – Smart QR Attendance System
+// GROUP 5 – Smart QR Attendance & Christmas Raffle System
 // Screen: ScannerScreen (scanner.tsx)
-// Features: Camera viewfinder, Universal QR format parser (accepts any
-//           online or generated QR format), duplicate scan prevention,
-//           success modal & duplicate alert modal, AsyncStorage sync
-// Design: Leaf Green (#4A7C59) + Warm Beige (#F5F0E8)
+// Features:
+//   - Camera viewfinder + Universal Participant/Class QR Parser
+//   - Evaluates Present vs Late (15-min cut-off) & Invalid QR codes
+//   - Duplicate scan prevention per participant per event
+//   - Automatically adds scanned participant to Raffle Wheel & Google Sheets
+//   - Navigates to attendance-result.tsx on completion
 // ============================================================
 
 import { Ionicons } from '@expo/vector-icons';
@@ -12,7 +14,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Modal,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -27,44 +28,106 @@ import { useAttendance } from '@/context/attendance-context';
 import { AttendanceRecord } from '@/types/attendance';
 
 // ── Smart QR Parser ──────────────────────────────────────────
-// Accepts any online QR code format: URL, JSON, delimited text,
-// key-value pair, system prefix, or arbitrary text generator format.
 interface ParsedQR {
+  isValid: boolean;
   subject: string;
+  studentName?: string;
+  studentId?: string;
+  course?: string;
+  section?: string;
+  status: 'present' | 'late' | 'invalid';
   formatType: string;
   details?: string;
   raw: string;
 }
 
+/**
+ * Evaluates whether current time is >15 minutes past a session start time ("HH:MM").
+ */
+function evaluateLateCutoff(startTimeStr?: string): 'present' | 'late' {
+  if (!startTimeStr) return 'present';
+  const match = startTimeStr.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return 'present';
+
+  const startHour = parseInt(match[1], 10);
+  const startMin = parseInt(match[2], 10);
+  if (isNaN(startHour) || isNaN(startMin)) return 'present';
+
+  const now = new Date();
+  const sessionStart = new Date(now);
+  sessionStart.setHours(startHour, startMin, 0, 0);
+
+  const diffMinutes = (now.getTime() - sessionStart.getTime()) / (1000 * 60);
+  return diffMinutes > 15 ? 'late' : 'present';
+}
+
 function parseQRData(raw: string): ParsedQR {
   const trimmed = (raw || '').trim();
 
-  if (!trimmed) {
+  // Reject empty, too-short, or explicit invalid payloads
+  if (
+    !trimmed ||
+    trimmed.length < 2 ||
+    trimmed.toUpperCase() === 'INVALID' ||
+    trimmed.startsWith('INVALID|') ||
+    /[\x00-\x08\x0E-\x1F]/.test(trimmed)
+  ) {
     return {
-      subject: 'General Class',
-      formatType: 'Unknown Format',
+      isValid: false,
+      subject: 'Unrecognized QR',
+      status: 'invalid',
+      formatType: 'Invalid QR Code',
       raw,
     };
   }
 
-  // 1. System Prefix format: "SMART-QR-ATTEND|CS101|IT-3A|2026-10-01" or "ATTENDANCE|..."
+  // 1. System Prefix format:
+  // "SMART-QR-ATTEND|Christmas Party 2026|2024305392|Joebelle Dumapias|BSIT|IT-3A|08:00"
+  // or "SMART-QR-ATTEND|CS101|IT-3A|late"
   if (
     trimmed.startsWith('SMART-QR-ATTEND|') ||
     trimmed.startsWith('ATTENDANCE|') ||
     trimmed.startsWith('QR-ATTEND|')
   ) {
-    const parts = trimmed.split('|');
-    const subject = parts[1]?.trim() || 'CS101';
-    const extra = parts.slice(2).filter(Boolean).join(' · ');
+    const parts = trimmed.split('|').map((s) => s.trim());
+    const subject = parts[1] || 'Christmas Party 2026';
+    const lastPart = (parts[parts.length - 1] || '').toLowerCase();
+
+    let status: 'present' | 'late' = 'present';
+    if (lastPart === 'late') {
+      status = 'late';
+    } else if (/^\d{1,2}:\d{2}$/.test(lastPart)) {
+      status = evaluateLateCutoff(lastPart);
+    }
+
+    // Check if full participant info is encoded
+    if (parts.length >= 5) {
+      return {
+        isValid: true,
+        subject,
+        studentId: parts[2] || undefined,
+        studentName: parts[3] || undefined,
+        course: parts[4] || undefined,
+        section: parts[5] || undefined,
+        status,
+        formatType: 'System QR Pass',
+        details: parts.slice(2, 5).filter(Boolean).join(' · '),
+        raw: trimmed,
+      };
+    }
+
     return {
+      isValid: true,
       subject,
+      section: parts[2] || undefined,
+      status,
       formatType: 'System QR Code',
-      details: extra || undefined,
+      details: parts.slice(2).filter(Boolean).join(' · ') || undefined,
       raw: trimmed,
     };
   }
 
-  // 2. JSON Format (online QR code generators exporting JSON objects)
+  // 2. JSON Format (from built-in QR Pass Generator or online generators)
   if (
     (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
     (trimmed.startsWith('[') && trimmed.endsWith(']'))
@@ -72,41 +135,55 @@ function parseQRData(raw: string): ParsedQR {
     try {
       const parsed = JSON.parse(trimmed);
       if (typeof parsed === 'object' && parsed !== null) {
+        if (parsed.status === 'invalid' || parsed.valid === false) {
+          return {
+            isValid: false,
+            subject: 'Invalid QR Payload',
+            status: 'invalid',
+            formatType: 'JSON QR',
+            raw: trimmed,
+          };
+        }
+
         const candidateSubject =
           parsed.subject ||
-          parsed.subjectName ||
-          parsed.course ||
+          parsed.event ||
           parsed.courseCode ||
-          parsed.courseName ||
           parsed.class ||
-          parsed.className ||
           parsed.title ||
-          parsed.code ||
-          parsed.name ||
-          parsed.id ||
-          'Online QR Class';
+          'Christmas Party 2026';
 
-        const extraInfo = [
-          parsed.section ? `Sec ${parsed.section}` : null,
-          parsed.room ? `Room ${parsed.room}` : null,
-          parsed.instructor ? `Prof ${parsed.instructor}` : null,
-        ]
-          .filter(Boolean)
-          .join(' · ');
+        let status: 'present' | 'late' = 'present';
+        if (String(parsed.status).toLowerCase() === 'late') {
+          status = 'late';
+        } else if (parsed.startTime) {
+          status = evaluateLateCutoff(String(parsed.startTime));
+        }
 
         return {
+          isValid: true,
           subject: String(candidateSubject).trim(),
-          formatType: 'Online JSON QR',
-          details: extraInfo || undefined,
+          studentName: parsed.studentName || parsed.name || parsed.participant || undefined,
+          studentId: parsed.studentId || parsed.id || undefined,
+          course: parsed.course || parsed.department || undefined,
+          section: parsed.section || parsed.group || undefined,
+          status,
+          formatType: 'Digital QR Pass',
           raw: trimmed,
         };
       }
     } catch {
-      // JSON parse failed, proceed to next parser
+      return {
+        isValid: false,
+        subject: 'Malformed JSON QR',
+        status: 'invalid',
+        formatType: 'Corrupted JSON',
+        raw: trimmed,
+      };
     }
   }
 
-  // 3. Web URL QR Code (Google Forms, Classroom, Website, or Query params)
+  // 3. Web URL QR Code
   if (
     trimmed.startsWith('http://') ||
     trimmed.startsWith('https://') ||
@@ -119,84 +196,73 @@ function parseQRData(raw: string): ParsedQR {
 
       const subjectParam =
         params.get('subject') ||
+        params.get('event') ||
         params.get('course') ||
         params.get('class') ||
-        params.get('code') ||
-        params.get('title') ||
-        params.get('name');
+        'Christmas Party 2026';
 
-      if (subjectParam) {
-        return {
-          subject: decodeURIComponent(subjectParam).trim(),
-          formatType: 'Online Web QR',
-          details: urlObj.hostname,
-          raw: trimmed,
-        };
-      }
+      const nameParam = params.get('name') || params.get('studentName') || undefined;
+      const idParam = params.get('id') || params.get('studentId') || undefined;
+      const statusParam = params.get('status')?.toLowerCase();
+      const startParam = params.get('start') || params.get('startTime') || undefined;
 
-      // Check pathname for slug (e.g. /classes/cs101 or /attend/math)
-      const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-      if (pathSegments.length > 0) {
-        const lastSegment = decodeURIComponent(pathSegments[pathSegments.length - 1]);
-        if (lastSegment.length > 0 && lastSegment.length <= 40) {
-          const readable = lastSegment.replace(/[-_]/g, ' ').trim();
-          return {
-            subject: readable.toUpperCase(),
-            formatType: 'Online Web QR',
-            details: urlObj.hostname,
-            raw: trimmed,
-          };
-        }
-      }
+      const status: 'present' | 'late' =
+        statusParam === 'late' ? 'late' : evaluateLateCutoff(startParam);
 
       return {
-        subject: urlObj.hostname.replace('www.', ''),
+        isValid: true,
+        subject: decodeURIComponent(subjectParam).trim(),
+        studentName: nameParam ? decodeURIComponent(nameParam).trim() : undefined,
+        studentId: idParam ? decodeURIComponent(idParam).trim() : undefined,
+        status,
         formatType: 'Online Web QR',
-        details: trimmed.length > 40 ? trimmed.substring(0, 40) + '...' : trimmed,
+        details: urlObj.hostname,
         raw: trimmed,
       };
     } catch {
-      // URL parse failed, continue
+      // continue
     }
   }
 
-  // 4. Key-Value text (e.g., "Subject: CS101" or "Course=IT301; Date=2026-10-02")
-  const kvMatch = trimmed.match(/(?:subject|course|class|title|code)[:=]\s*([^,\n\r|;]+)/i);
-  if (kvMatch && kvMatch[1]) {
-    return {
-      subject: kvMatch[1].trim(),
-      formatType: 'Formatted Text QR',
-      raw: trimmed,
-    };
-  }
-
-  // 5. Delimited text (e.g., "CS101, IT-3A, 2026-10-02" or "CS101;Lecture")
+  // 4. Delimited text (e.g. "2024305392, Joebelle Dumapias, BSIT, IT-3A")
   if (trimmed.includes('|') || trimmed.includes(';') || trimmed.includes(',')) {
-    const delimiter = trimmed.includes('|') ? '|' : trimmed.includes(';') ? ';' : ',';
+    const delimiter = trimmed.includes('|')
+      ? '|'
+      : trimmed.includes(';')
+      ? ';'
+      : ',';
     const segments = trimmed
       .split(delimiter)
       .map((s) => s.trim())
       .filter(Boolean);
 
-    if (segments.length > 0 && segments[0].length <= 50) {
+    if (segments.length >= 2) {
       return {
-        subject: segments[0],
-        formatType: 'Delimited QR Code',
-        details: segments.slice(1).join(' · ') || undefined,
+        isValid: true,
+        subject: 'Christmas Party 2026',
+        studentId: segments[0],
+        studentName: segments[1],
+        course: segments[2] || undefined,
+        section: segments[3] || undefined,
+        status: 'present',
+        formatType: 'Participant QR Badge',
+        details: segments.join(' · '),
         raw: trimmed,
       };
     }
   }
 
-  // 6. Any other Plain Text from any online QR generator
+  // 5. Plain Text (Participant Name or Event Code)
   const firstLine = trimmed.split(/[\r\n]+/)[0].trim();
-  const cleanSubject =
+  const cleanText =
     firstLine.length > 45 ? `${firstLine.substring(0, 42)}...` : firstLine;
 
   return {
-    subject: cleanSubject || 'General Attendance',
-    formatType: 'Online QR Code',
-    details: trimmed.length > 45 ? `${trimmed.substring(0, 45)}...` : undefined,
+    isValid: true,
+    subject: 'Christmas Party 2026',
+    studentName: cleanText,
+    status: 'present',
+    formatType: 'Guest QR Code',
     raw: trimmed,
   };
 }
@@ -204,10 +270,10 @@ function parseQRData(raw: string): ParsedQR {
 // ── Screen Component ─────────────────────────────────────────
 export default function ScannerScreen() {
   const {
-    studentName = 'Student',
-    studentId = '',
-    course = '',
-    section = '',
+    studentName = 'Joebelle Dumapias',
+    studentId = '2024305392',
+    course = 'BS Information Technology',
+    section = 'IT-3A',
   } = useLocalSearchParams<{
     studentName?: string;
     studentId?: string;
@@ -218,70 +284,80 @@ export default function ScannerScreen() {
   const { addRecord, records } = useAttendance();
   const [scanning, setScanning] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
   const [showDuplicate, setShowDuplicate] = useState(false);
 
-  // Scanned info states
   const [scannedInfo, setScannedInfo] = useState<ParsedQR | null>(null);
-  const [existingDuplicate, setExistingDuplicate] = useState<AttendanceRecord | null>(null);
+  const [existingDuplicate, setExistingDuplicate] =
+    useState<AttendanceRecord | null>(null);
 
-  // Guard to prevent multiple simultaneous scan events in the same millisecond
   const isProcessingRef = useRef(false);
 
   // ── Handle a scanned QR ─────────────────────────────────
   const handleScanned = useCallback(
     async (rawCode: string) => {
-      // Guard against rapid duplicate triggers from camera stream
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
-      setScanning(false); // Pause camera immediately
+      setScanning(false);
 
-      if (!rawCode || !rawCode.trim()) {
-        setErrorMsg('Scanned QR code is empty or unreadable. Please try again.');
-        isProcessingRef.current = false;
-        return;
-      }
-
-      // Universal QR Parser accepts any online/offline format
       const parsed = parseQRData(rawCode);
       setScannedInfo(parsed);
 
-      const targetStudentId = String(studentId || '').trim();
-      const currentSubject = parsed.subject.trim().toLowerCase();
-      const todayDate = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+      // 1. Handle Invalid QR Code -> Navigate to Result Screen with 'invalid' status
+      if (!parsed.isValid || parsed.status === 'invalid') {
+        isProcessingRef.current = false;
+        router.replace({
+          pathname: '/attendance-result',
+          params: {
+            studentName: String(studentName),
+            studentId: String(studentId),
+            course: String(course),
+            section: String(section),
+            subject: parsed.subject,
+            status: 'invalid',
+          },
+        });
+        return;
+      }
 
-      // ── Duplicate Scan Prevention ─────────────────────────
-      // Check if student has already marked attendance for this subject today
+      // Resolve final participant details (use QR-encoded guest info if present, else active profile)
+      const resolvedName = parsed.studentName || String(studentName || 'Party Guest');
+      const resolvedId = parsed.studentId || String(studentId || '2024305392');
+      const resolvedCourse = parsed.course || String(course || 'BS Information Technology');
+      const resolvedSection = parsed.section || String(section || 'IT-3A');
+      const currentSubject = parsed.subject.trim().toLowerCase();
+      const todayDate = new Date().toISOString().split('T')[0];
+
+      // 2. Duplicate Scan Prevention (Same participant + same event + today)
       const duplicateFound = records.find((rec) => {
-        const isSameStudent =
-          !targetStudentId ||
-          rec.studentId.trim().toLowerCase() === targetStudentId.toLowerCase();
+        const isSamePerson =
+          rec.studentId.trim().toLowerCase() === resolvedId.trim().toLowerCase() &&
+          rec.studentName.trim().toLowerCase() === resolvedName.trim().toLowerCase();
         const isSameSubject =
           rec.subject.trim().toLowerCase() === currentSubject;
         const isSameDate = rec.date === todayDate;
 
-        return isSameStudent && isSameSubject && isSameDate;
+        return isSamePerson && isSameSubject && isSameDate;
       });
 
       if (duplicateFound) {
-        // DUPLICATE DETECTED: Prevent saving and alert the user
         setExistingDuplicate(duplicateFound);
         setShowDuplicate(true);
         setErrorMsg(
-          `Duplicate scan: Attendance for "${parsed.subject}" was already recorded today at ${duplicateFound.time}.`
+          `Duplicate scan: "${resolvedName}" is already checked in today at ${duplicateFound.time}.`
         );
         isProcessingRef.current = false;
         return;
       }
 
-      // ── New Attendance Record ──────────────────────────────
+      // 3. Save New Check-In Record, Enter into Raffle Pool & Sync to Google Sheets
+      let createdRecord: AttendanceRecord | null = null;
       try {
-        await addRecord({
-          studentName: String(studentName || 'Student'),
-          studentId: String(studentId || '2024-00000'),
-          course: String(course || 'BS Information Technology'),
-          section: String(section || 'IT-3A'),
-          status: 'present',
+        createdRecord = await addRecord({
+          studentName: resolvedName,
+          studentId: resolvedId,
+          course: resolvedCourse,
+          section: resolvedSection,
+          status: parsed.status,
           subject: parsed.subject,
         });
       } catch (err) {
@@ -289,16 +365,28 @@ export default function ScannerScreen() {
       }
 
       setErrorMsg('');
-      setShowSuccess(true);
       isProcessingRef.current = false;
+
+      // 4. Transition to Attendance Result Screen
+      router.replace({
+        pathname: '/attendance-result',
+        params: {
+          studentName: resolvedName,
+          studentId: resolvedId,
+          course: resolvedCourse,
+          section: resolvedSection,
+          subject: parsed.subject,
+          status: parsed.status,
+          time: createdRecord?.time,
+          date: createdRecord?.date,
+        },
+      });
     },
     [studentName, studentId, course, section, records, addRecord]
   );
 
-  // ── Reset: allow another scan ────────────────────────────
   function resetScan() {
     isProcessingRef.current = false;
-    setShowSuccess(false);
     setShowDuplicate(false);
     setExistingDuplicate(null);
     setScannedInfo(null);
@@ -306,15 +394,12 @@ export default function ScannerScreen() {
     setScanning(true);
   }
 
-  // ── Go back to dashboard ─────────────────────────────────
   function goToDashboard() {
     router.back();
   }
 
-  // ── Navigate to history screen ───────────────────────────
   function goToHistory() {
     setShowDuplicate(false);
-    setShowSuccess(false);
     router.push({
       pathname: '/history',
       params: {
@@ -322,6 +407,36 @@ export default function ScannerScreen() {
         studentId: String(studentId),
       },
     });
+  }
+
+  // Quick simulation helper so users can test Present, Late, and Invalid QR flows on any device
+  function simulateScan(type: 'present' | 'late' | 'invalid') {
+    isProcessingRef.current = false;
+    if (type === 'invalid') {
+      handleScanned('INVALID|CORRUPTED_QR');
+      return;
+    }
+    const randomNum = Math.floor(100 + Math.random() * 899);
+    const sampleNames = [
+      'Clarisse Villanueva',
+      'Gabriel Tan',
+      'Patricia Lim',
+      'Joshua Bautista',
+      'Katrina Ramos',
+      'Miguel Soriano',
+    ];
+    const pickedName =
+      sampleNames[Math.floor(Math.random() * sampleNames.length)];
+
+    const payload = JSON.stringify({
+      subject: 'Christmas Party 2026',
+      studentId: `2024-99${randomNum}`,
+      studentName: pickedName,
+      course: String(course || 'BS Information Technology'),
+      section: String(section || 'IT-3A'),
+      status: type,
+    });
+    handleScanned(payload);
   }
 
   return (
@@ -339,18 +454,18 @@ export default function ScannerScreen() {
         </TouchableOpacity>
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Scan QR Code</Text>
+          <Text style={styles.headerTitle}>Scan Participant QR</Text>
           <Text style={styles.headerSubtitle}>
-            {String(studentName)} · {String(studentId || 'Universal Scanner')}
+            Auto-syncs to Google Sheets & Raffle Wheel
           </Text>
         </View>
 
         <TouchableOpacity
           style={styles.historyShortcutBtn}
-          onPress={goToHistory}
+          onPress={() => router.push('/roulette')}
           activeOpacity={0.7}
         >
-          <Ionicons name="time-outline" size={20} color={Colors.white} />
+          <Ionicons name="gift" size={20} color={Colors.goldBright} />
         </TouchableOpacity>
       </View>
 
@@ -359,10 +474,9 @@ export default function ScannerScreen() {
         <QRScanner onScanned={handleScanned} active={scanning} />
       </View>
 
-      {/* ── Bottom info panel ── */}
+      {/* ── Bottom info & Quick Demo panel ── */}
       <View style={styles.bottomPanel}>
         {errorMsg ? (
-          /* Error / Duplicate Warning Box */
           <View style={styles.errorBox}>
             <Ionicons
               name={showDuplicate ? 'warning' : 'alert-circle'}
@@ -379,7 +493,6 @@ export default function ScannerScreen() {
             </Text>
           </View>
         ) : (
-          /* Hint text explaining universal QR acceptance */
           <View style={styles.hintBox}>
             <Ionicons
               name="qr-code-outline"
@@ -387,122 +500,100 @@ export default function ScannerScreen() {
               color={Colors.leafGreen}
             />
             <Text style={styles.hintText}>
-              Point camera at any attendance QR code, online generator code, or classroom display
+              Scan any participant QR pass to check in and add their name to the
+              Christmas Raffle Roulette Wheel!
             </Text>
           </View>
         )}
 
-        {/* Scan Again button — only shown when paused */}
+        {/* Quick Simulator Bar for Instant Testing */}
+        <View style={styles.simSection}>
+          <Text style={styles.simTitle}>QUICK TEST SCANNER:</Text>
+          <View style={styles.simChipRow}>
+            <TouchableOpacity
+              style={[styles.simChip, { borderColor: Colors.present }]}
+              onPress={() => simulateScan('present')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="checkmark-circle"
+                size={14}
+                color={Colors.present}
+              />
+              <Text style={[styles.simChipText, { color: Colors.present }]}>
+                + Guest QR
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.simChip, { borderColor: Colors.late }]}
+              onPress={() => simulateScan('late')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="time" size={14} color={Colors.late} />
+              <Text style={[styles.simChipText, { color: Colors.late }]}>
+                Late QR
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.simChip, { borderColor: Colors.absent }]}
+              onPress={() => simulateScan('invalid')}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="warning" size={14} color={Colors.absent} />
+              <Text style={[styles.simChipText, { color: Colors.absent }]}>
+                Invalid QR
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {!scanning && (
           <TouchableOpacity
             style={styles.rescanButton}
             onPress={resetScan}
             activeOpacity={0.85}
           >
-            <Ionicons name="refresh-outline" size={18} color={Colors.darkGreen} />
+            <Ionicons
+              name="refresh-outline"
+              size={18}
+              color={Colors.darkGreen}
+            />
             <Text style={styles.rescanText}>Scan Again</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* ── Success Modal ── */}
-      <Modal visible={showSuccess} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            {/* Success icon */}
-            <View style={styles.successIconCircle}>
-              <Ionicons name="checkmark" size={44} color={Colors.white} />
-            </View>
-
-            <Text style={styles.modalTitle}>Attendance Marked!</Text>
-            <Text style={styles.modalSubject}>
-              {scannedInfo?.subject || 'CS101'}
-            </Text>
-
-            {/* QR format badge */}
-            {scannedInfo?.formatType && (
-              <View style={styles.qrFormatBadge}>
-                <Ionicons name="barcode-outline" size={12} color={Colors.olive} />
-                <Text style={styles.qrFormatText}>
-                  {scannedInfo.formatType}
-                  {scannedInfo.details ? ` (${scannedInfo.details})` : ''}
-                </Text>
-              </View>
-            )}
-
-            {/* Student details */}
-            <View style={styles.detailsCard}>
-              <View style={styles.modalInfoRow}>
-                <Ionicons name="person-outline" size={14} color={Colors.olive} />
-                <Text style={styles.modalInfoText}>{String(studentName)}</Text>
-              </View>
-              <View style={styles.modalInfoRow}>
-                <Ionicons name="id-card-outline" size={14} color={Colors.olive} />
-                <Text style={styles.modalInfoText}>
-                  {String(studentId || 'N/A')}
-                </Text>
-              </View>
-              <View style={styles.modalInfoRow}>
-                <Ionicons name="school-outline" size={14} color={Colors.olive} />
-                <Text style={styles.modalInfoText}>
-                  {String(course || 'BSIT')} · {String(section || 'Regular')}
-                </Text>
-              </View>
-            </View>
-
-            {/* Status badge */}
-            <View style={styles.presentBadge}>
-              <View style={styles.presentDot} />
-              <Text style={styles.presentText}>Present</Text>
-            </View>
-
-            {/* Action buttons */}
-            <TouchableOpacity
-              style={styles.scanAnotherBtn}
-              onPress={resetScan}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="scan-outline" size={18} color={Colors.white} />
-              <Text style={styles.scanAnotherText}>Scan Another</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.dashboardBtn}
-              onPress={goToDashboard}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.dashboardBtnText}>Back to Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* ── Duplicate Scan Alert Modal ── */}
       <Modal visible={showDuplicate} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            {/* Warning icon */}
             <View style={styles.duplicateIconCircle}>
               <Ionicons name="alert" size={40} color={Colors.white} />
             </View>
 
-            <Text style={styles.duplicateModalTitle}>Duplicate Scan</Text>
+            <Text style={styles.duplicateModalTitle}>Already Checked In</Text>
             <Text style={styles.duplicateModalSubtitle}>
-              Attendance Already Recorded Today
+              This Participant Is Already in the Raffle Pool
             </Text>
 
-            {/* Subject info */}
             <View style={styles.duplicateSubjectBox}>
-              <Ionicons name="book-outline" size={18} color={Colors.late} />
+              <Ionicons name="person-outline" size={18} color={Colors.late} />
               <Text style={styles.duplicateSubjectText}>
-                {scannedInfo?.subject || 'Class'}
+                {existingDuplicate?.studentName ||
+                  scannedInfo?.studentName ||
+                  'Participant'}
               </Text>
             </View>
 
-            {/* Duplicate Notice details */}
             <View style={styles.duplicateInfoCard}>
               <View style={styles.duplicateInfoRow}>
-                <Ionicons name="calendar-outline" size={14} color={Colors.olive} />
+                <Ionicons
+                  name="calendar-outline"
+                  size={14}
+                  color={Colors.olive}
+                />
                 <Text style={styles.duplicateInfoLabel}>Date Logged:</Text>
                 <Text style={styles.duplicateInfoValue}>
                   {existingDuplicate?.date || 'Today'}
@@ -515,32 +606,17 @@ export default function ScannerScreen() {
                   {existingDuplicate?.time || 'Earlier'}
                 </Text>
               </View>
-              <View style={styles.duplicateInfoRow}>
-                <Ionicons name="checkmark-circle-outline" size={14} color={Colors.present} />
-                <Text style={styles.duplicateInfoLabel}>Status:</Text>
-                <Text
-                  style={[
-                    styles.duplicateInfoValue,
-                    { color: Colors.present, fontWeight: '700' },
-                  ]}
-                >
-                  {existingDuplicate?.status?.toUpperCase() || 'PRESENT'}
-                </Text>
-              </View>
             </View>
 
-            <Text style={styles.duplicateNotice}>
-              You cannot log attendance more than once for the same subject on the same day.
-            </Text>
-
-            {/* Action buttons */}
             <TouchableOpacity
               style={styles.rescanDuplicateBtn}
               onPress={resetScan}
               activeOpacity={0.85}
             >
               <Ionicons name="scan-outline" size={18} color={Colors.white} />
-              <Text style={styles.rescanDuplicateBtnText}>Scan Another Code</Text>
+              <Text style={styles.rescanDuplicateBtnText}>
+                Scan Next Participant
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -548,16 +624,12 @@ export default function ScannerScreen() {
               onPress={goToHistory}
               activeOpacity={0.85}
             >
-              <Ionicons name="list-outline" size={16} color={Colors.leafGreen} />
-              <Text style={styles.viewHistoryBtnText}>View Attendance History</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.dashboardBtn}
-              onPress={goToDashboard}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.dashboardBtnText}>Back to Dashboard</Text>
+              <Ionicons
+                name="list-outline"
+                size={16}
+                color={Colors.leafGreen}
+              />
+              <Text style={styles.viewHistoryBtnText}>View Check-In Logs</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -572,8 +644,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.darkGreen,
   },
-
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -610,21 +680,17 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: FontSize.xs,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.75)',
     marginTop: 1,
   },
-
-  // Camera
   cameraWrapper: {
     flex: 1,
   },
-
-  // Bottom panel
   bottomPanel: {
     backgroundColor: Colors.beige,
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
-    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
   },
@@ -638,9 +704,9 @@ const styles = StyleSheet.create({
   },
   hintText: {
     flex: 1,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.xs,
     color: Colors.textPrimary,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   errorBox: {
     flexDirection: 'row',
@@ -654,25 +720,56 @@ const styles = StyleSheet.create({
   },
   errorText: {
     flex: 1,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.xs,
     color: Colors.absent,
-    lineHeight: 20,
-    fontWeight: '500',
+    lineHeight: 18,
+    fontWeight: '600',
   },
+
+  // Simulator Chips
+  simSection: {
+    gap: 6,
+  },
+  simTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.olive,
+    letterSpacing: 0.8,
+  },
+  simChipRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  simChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+  },
+  simChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
   rescanButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    height: 48,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: 1.5,
     borderColor: Colors.darkGreen,
     backgroundColor: Colors.beige,
   },
   rescanText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
+    fontSize: FontSize.sm,
+    fontWeight: '700',
     color: Colors.darkGreen,
   },
 
@@ -693,144 +790,25 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     ...Shadow.card,
   },
-
-  // Success modal
-  successIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.leafGreen,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: Spacing.xs,
-    ...Shadow.button,
-  },
-  modalTitle: {
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  modalSubject: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.leafGreen,
-    textAlign: 'center',
-  },
-  qrFormatBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.creamWhite,
-    paddingHorizontal: Spacing.sm + 2,
-    paddingVertical: 3,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: Spacing.xs,
-  },
-  qrFormatText: {
-    fontSize: FontSize.xs - 1,
-    color: Colors.olive,
-    fontWeight: '600',
-  },
-  detailsCard: {
-    width: '100%',
-    backgroundColor: Colors.creamWhite,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginVertical: Spacing.xs,
-  },
-  modalInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs + 2,
-  },
-  modalInfoText: {
-    fontSize: FontSize.sm,
-    color: Colors.textPrimary,
-    fontWeight: '500',
-  },
-  presentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.presentBg,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs + 2,
-    borderRadius: Radius.pill,
-    marginVertical: Spacing.xs,
-  },
-  presentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.present,
-  },
-  presentText: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.present,
-  },
-  scanAnotherBtn: {
-    width: '100%',
-    height: 48,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.leafGreen,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-    ...Shadow.button,
-  },
-  scanAnotherText: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  dashboardBtn: {
-    width: '100%',
-    height: 42,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dashboardBtnText: {
-    fontSize: FontSize.sm,
-    fontWeight: '500',
-    color: Colors.olive,
-  },
-
-  // Duplicate Modal
   duplicateIconCircle: {
-    width: 76,
-    height: 76,
+    width: 72,
+    height: 72,
     borderRadius: Radius.pill,
     backgroundColor: Colors.late,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xs,
-    shadowColor: Colors.late,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
   duplicateModalTitle: {
     fontSize: FontSize.xl,
     fontWeight: '700',
     color: Colors.textPrimary,
-    letterSpacing: -0.3,
   },
   duplicateModalSubtitle: {
     fontSize: FontSize.xs,
+    color: Colors.olive,
     fontWeight: '600',
-    color: Colors.late,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    marginBottom: Spacing.xs,
   },
   duplicateSubjectBox: {
     flexDirection: 'row',
@@ -838,11 +816,11 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     backgroundColor: Colors.lateBg,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs + 2,
+    paddingVertical: Spacing.sm,
     borderRadius: Radius.pill,
-    marginTop: Spacing.xs,
     borderWidth: 1,
-    borderColor: 'rgba(245, 127, 23, 0.3)',
+    borderColor: Colors.late,
+    marginVertical: Spacing.xs,
   },
   duplicateSubjectText: {
     fontSize: FontSize.md,
@@ -857,29 +835,24 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: Colors.border,
-    marginTop: Spacing.sm,
+    marginVertical: Spacing.xs,
   },
   duplicateInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: 6,
   },
   duplicateInfoLabel: {
     fontSize: FontSize.xs,
     color: Colors.olive,
-    width: 85,
+    fontWeight: '600',
+    width: 90,
   },
   duplicateInfoValue: {
     fontSize: FontSize.xs,
-    fontWeight: '600',
     color: Colors.textPrimary,
-  },
-  duplicateNotice: {
-    fontSize: FontSize.xs,
-    color: Colors.olive,
-    textAlign: 'center',
-    marginTop: Spacing.xs,
-    lineHeight: 16,
+    fontWeight: '600',
+    flex: 1,
   },
   rescanDuplicateBtn: {
     width: '100%',
@@ -890,7 +863,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
     ...Shadow.button,
   },
   rescanDuplicateBtnText: {
@@ -900,11 +873,11 @@ const styles = StyleSheet.create({
   },
   viewHistoryBtn: {
     width: '100%',
-    height: 42,
+    height: 44,
     borderRadius: Radius.pill,
     borderWidth: 1.5,
     borderColor: Colors.leafGreen,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.lightGreen,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -913,7 +886,7 @@ const styles = StyleSheet.create({
   },
   viewHistoryBtnText: {
     fontSize: FontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.leafGreen,
   },
 });
