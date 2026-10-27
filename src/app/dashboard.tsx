@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import GoogleSheetConnectCard from '@/components/GoogleSheetConnectCard';
 import { ScanButton } from '@/components/ScanButton';
 import { StudentCard } from '@/components/StudentCard';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '@/constants/theme';
@@ -267,6 +268,9 @@ export default function DashboardScreen() {
             <Text style={styles.copiedToastText}>{copiedBanner}</Text>
           </View>
         ) : null}
+
+        {/* ── Sign in with Google: Auto-Create & Auto-Sync Google Sheet ── */}
+        <GoogleSheetConnectCard records={records} />
 
         {/* ── 1-Tap Raffle & Google Sheets Card (Zero Technical Setup!) ── */}
         <View style={styles.easyExportCard}>

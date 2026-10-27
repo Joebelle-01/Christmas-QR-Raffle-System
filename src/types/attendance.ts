@@ -1,6 +1,6 @@
 // ============================================================
 // Work Christmas Party – Smart QR Check-In Scanner
-// Types: Participant Check-In Record & Google Sheets Sync
+// Types: Participant Check-In Record & Google Sheets Auto-Sync
 // ============================================================
 
 export type AttendanceStatus = 'present' | 'invalid';
@@ -34,11 +34,28 @@ export interface AttendanceStats {
   departments: number;
 }
 
+/** Signed-in Google Account Session (OAuth 2.0) */
+export interface GoogleUserSession {
+  accessToken: string;
+  email: string;
+  name: string;
+  picture?: string;
+  expiresAt?: number;
+}
+
+/** Auto-Created Google Spreadsheet Metadata */
+export interface ConnectedSpreadsheet {
+  spreadsheetId: string;
+  spreadsheetTitle: string;
+  spreadsheetUrl: string;
+  createdAt: string;
+}
+
 /** Google Sheets Connection Configuration */
 export interface GoogleSheetsConfig {
   /** Optional Google Sheet link (to open or view the live sheet) */
   sheetUrl: string;
-  /** Google Apps Script Web App URL (receives POST on every QR scan to append Name & Department) */
+  /** Optional webhook fallback URL */
   webhookUrl: string;
   /** Automatically send every scanned participant to Google Sheets */
   autoSync: boolean;

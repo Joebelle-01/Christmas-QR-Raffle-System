@@ -21,9 +21,11 @@ import {
 } from '@/services/attendance-storage';
 import {
   DEFAULT_SHEETS_CONFIG,
+  getGoogleSession,
   getSheetsConfig,
   postCheckInToGoogleSheet,
   saveSheetsConfig,
+  syncAllRecordsToGoogleSheet,
 } from '@/services/google-sheets';
 import {
   AttendanceRecord,
@@ -137,17 +139,36 @@ export function AttendanceProvider({
     async (
       configOverride?: GoogleSheetsConfig
     ): Promise<{ syncedCount: number; message: string }> => {
-      const activeConfig = configOverride || sheetsConfig;
-      if (!activeConfig.webhookUrl.trim()) {
-        return {
-          syncedCount: 0,
-          message:
-            'Please paste your Google Apps Script Web App URL to sync participant names automatically to Google Sheets.',
-        };
-      }
-
       setIsSyncing(true);
       try {
+        // 1. Check if signed in with Google OAuth first
+        const googleSession = await getGoogleSession();
+        if (googleSession?.accessToken) {
+          const result = await syncAllRecordsToGoogleSheet(records);
+          setRecords((prev) => {
+            const updated = prev.map((r) => ({ ...r, syncedToSheet: true }));
+            saveAllRecords(updated).catch(console.warn);
+            return updated;
+          });
+          return {
+            syncedCount: result.syncedCount,
+            message:
+              result.syncedCount > 0
+                ? `Synced ${result.syncedCount} participant(s) to "${result.sheet.spreadsheetTitle}"!`
+                : `All ${records.length} checked-in participants are already in "${result.sheet.spreadsheetTitle}"!`,
+          };
+        }
+
+        // 2. Fallback to optional webhook URL
+        const activeConfig = configOverride || sheetsConfig;
+        if (!activeConfig.webhookUrl.trim()) {
+          return {
+            syncedCount: 0,
+            message:
+              'Please tap "Continue with Google" to automatically create and sync your Google Sheet.',
+          };
+        }
+
         const unsynced = records.filter((r) => !r.syncedToSheet);
         if (unsynced.length === 0) {
           return {
@@ -184,7 +205,7 @@ export function AttendanceProvider({
           message:
             successCount > 0
               ? `Synced ${successCount} participant${successCount === 1 ? '' : 's'} to Google Sheets!`
-              : 'Could not reach Google Sheets Web App URL. Check your URL and internet connection.',
+              : 'Could not reach Google Sheets. Check your internet connection.',
         };
       } finally {
         setIsSyncing(false);
