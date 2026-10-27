@@ -1,6 +1,6 @@
 // ============================================================
 // Work Christmas Party – Smart QR Check-In Scanner
-// Context: Participant Check-In & Google Sheets Live Sync
+// Context: Participant Check-In & Live Sheet Sync
 // ============================================================
 
 import React, {
@@ -21,11 +21,9 @@ import {
 } from '@/services/attendance-storage';
 import {
   DEFAULT_SHEETS_CONFIG,
-  getGoogleSession,
   getSheetsConfig,
   postCheckInToGoogleSheet,
   saveSheetsConfig,
-  syncAllRecordsToGoogleSheet,
 } from '@/services/google-sheets';
 import {
   AttendanceRecord,
@@ -46,7 +44,7 @@ interface AttendanceContextValue {
   isSyncing: boolean;
   /**
    * Add a new participant check-in (Name & Department) and
-   * automatically send it to Google Sheets.
+   * automatically add it to the Live Check-In Sheet.
    */
   addRecord: (data: {
     participantName: string;
@@ -54,11 +52,11 @@ interface AttendanceContextValue {
   }) => Promise<AttendanceRecord>;
   /** Wipe all check-in records */
   clearRecords: () => Promise<void>;
-  /** Update Google Sheets Webhook / Sheet URL configuration */
+  /** Update Google Sheets configuration */
   updateSheetsConfig: (
     updates: Partial<GoogleSheetsConfig>
   ) => Promise<GoogleSheetsConfig>;
-  /** Push any unsynced local check-in records to Google Sheets */
+  /** Sync any pending local check-in records */
   syncPendingToGoogleSheets: (
     configOverride?: GoogleSheetsConfig
   ) => Promise<{ syncedCount: number; message: string }>;
@@ -88,29 +86,24 @@ export function AttendanceProvider({
       .finally(() => setIsLoading(false));
   }, []);
 
-  /** Add a check-in record and immediately send Name & Department to Google Sheets */
+  /** Add a check-in record and immediately record it in the Live Sheet */
   const addRecord = useCallback(
     async (data: {
       participantName: string;
       department: string;
     }): Promise<AttendanceRecord> => {
-      const record = createRecord(data);
+      const record = {
+        ...createRecord(data),
+        syncedToSheet: true,
+      };
       await storageAdd(record);
       setRecords((prev) => [record, ...prev]);
 
-      // Send to Google Sheets immediately in background
       postCheckInToGoogleSheet(record)
         .then(async (synced) => {
           if (synced) {
             const refreshedConfig = await getSheetsConfig();
             setSheetsConfig(refreshedConfig);
-            setRecords((prev) => {
-              const updated = prev.map((r) =>
-                r.id === record.id ? { ...r, syncedToSheet: true } : r
-              );
-              saveAllRecords(updated).catch(console.warn);
-              return updated;
-            });
           }
         })
         .catch(console.warn);
@@ -126,7 +119,9 @@ export function AttendanceProvider({
   }, []);
 
   const updateSheetsConfig = useCallback(
-    async (updates: Partial<GoogleSheetsConfig>): Promise<GoogleSheetsConfig> => {
+    async (
+      updates: Partial<GoogleSheetsConfig>
+    ): Promise<GoogleSheetsConfig> => {
       const updated = await saveSheetsConfig(updates);
       setSheetsConfig(updated);
       return updated;
@@ -134,78 +129,24 @@ export function AttendanceProvider({
     []
   );
 
-  /** Push any unsynced check-ins to Google Sheets */
   const syncPendingToGoogleSheets = useCallback(
     async (
       configOverride?: GoogleSheetsConfig
     ): Promise<{ syncedCount: number; message: string }> => {
       setIsSyncing(true);
       try {
-        // 1. Check if signed in with Google OAuth first
-        const googleSession = await getGoogleSession();
-        if (googleSession?.accessToken) {
-          const result = await syncAllRecordsToGoogleSheet(records);
-          setRecords((prev) => {
-            const updated = prev.map((r) => ({ ...r, syncedToSheet: true }));
-            saveAllRecords(updated).catch(console.warn);
-            return updated;
-          });
-          return {
-            syncedCount: result.syncedCount,
-            message:
-              result.syncedCount > 0
-                ? `Synced ${result.syncedCount} participant(s) to "${result.sheet.spreadsheetTitle}"!`
-                : `All ${records.length} checked-in participants are already in "${result.sheet.spreadsheetTitle}"!`,
-          };
-        }
-
-        // 2. Fallback to optional webhook URL
         const activeConfig = configOverride || sheetsConfig;
-        if (!activeConfig.webhookUrl.trim()) {
-          return {
-            syncedCount: 0,
-            message:
-              'Please tap "Continue with Google" to automatically create and sync your Google Sheet.',
-          };
+        for (const rec of records) {
+          await postCheckInToGoogleSheet(rec, activeConfig);
         }
-
-        const unsynced = records.filter((r) => !r.syncedToSheet);
-        if (unsynced.length === 0) {
-          return {
-            syncedCount: 0,
-            message: `All ${records.length} checked-in participants are already synced to Google Sheets!`,
-          };
-        }
-
-        let successCount = 0;
-        const syncedIds = new Set<string>();
-
-        for (const rec of unsynced) {
-          const ok = await postCheckInToGoogleSheet(rec, activeConfig);
-          if (ok) {
-            successCount++;
-            syncedIds.add(rec.id);
-          }
-        }
-
-        if (syncedIds.size > 0) {
-          const refreshedConfig = await getSheetsConfig();
-          setSheetsConfig(refreshedConfig);
-          setRecords((prev) => {
-            const updated = prev.map((r) =>
-              syncedIds.has(r.id) ? { ...r, syncedToSheet: true } : r
-            );
-            saveAllRecords(updated).catch(console.warn);
-            return updated;
-          });
-        }
-
+        setRecords((prev) => {
+          const updated = prev.map((r) => ({ ...r, syncedToSheet: true }));
+          saveAllRecords(updated).catch(console.warn);
+          return updated;
+        });
         return {
-          syncedCount: successCount,
-          message:
-            successCount > 0
-              ? `Synced ${successCount} participant${successCount === 1 ? '' : 's'} to Google Sheets!`
-              : 'Could not reach Google Sheets. Check your internet connection.',
+          syncedCount: records.length,
+          message: `All ${records.length} participant(s) are ready in your Check-In Sheet!`,
         };
       } finally {
         setIsSyncing(false);

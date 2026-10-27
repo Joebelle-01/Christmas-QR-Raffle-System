@@ -16,7 +16,6 @@ import {
   Linking,
   Modal,
   ScrollView,
-  Share,
   StatusBar,
   StyleSheet,
   Text,
@@ -35,7 +34,7 @@ import { getStaffProfile, saveStaffProfile } from '@/services/auth-storage';
 import {
   copyNamesToClipboard,
   copyTableForSheets,
-  formatRecordsAsCSV,
+  downloadOrShareCSV,
 } from '@/services/google-sheets';
 
 const WORK_DEPARTMENTS = [
@@ -156,42 +155,35 @@ export default function DashboardScreen() {
     });
   }
 
-  // 1-Tap: Copy table for Google Sheets (splits into columns automatically on paste)
+  // 1-Tap: Copy table for Google Sheets & open https://sheets.new
   async function handleCopyForGoogleSheets() {
     if (records.length === 0) {
       Alert.alert(
         'No Participants Scanned Yet',
-        'Scan participant QR codes first, then tap here to copy or share to Google Sheets.'
+        'Scan participant QR codes first, then tap here to open Google Sheets.'
       );
       return;
     }
 
     await copyTableForSheets(records);
     showTempBanner(
-      `Copied ${records.length} rows! Open any Google Sheet and press Paste (Ctrl+V)`
+      `Copied ${records.length} rows! Just press Paste (Ctrl+V) in your new Google Sheet.`
     );
+    Linking.openURL('https://sheets.new').catch(() => {});
   }
 
-  // 1-Tap: Share CSV to Google Drive / Sheets / Email / Messenger
+  // 1-Tap: Download CSV on Web or Share on Mobile
   async function handleShareSheet() {
     if (records.length === 0) {
       Alert.alert(
         'No Participants Scanned Yet',
-        'Scan participant QR codes first before exporting.'
+        'Scan participant QR codes first before downloading.'
       );
       return;
     }
 
-    const csv = formatRecordsAsCSV(records);
-    try {
-      await Share.share({
-        title: 'Christmas Party Check-In List',
-        message: csv,
-      });
-    } catch {
-      await copyTableForSheets(records);
-      showTempBanner('Copied check-in table to clipboard!');
-    }
+    await downloadOrShareCSV(records);
+    showTempBanner('Downloaded Check-In Sheet (.CSV)!');
   }
 
   return (
